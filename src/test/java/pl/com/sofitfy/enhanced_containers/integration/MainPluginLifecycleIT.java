@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Co tu sprawdzamy:
  * - plugin ładuje się jak na serwerze (z jar-a)
  * - config.yml jest zapisany do data folder
- * - komenda /ecraft ma executor
+ * - komenda /4x4 ma executor, a /ecraft jest aliasem
  * - scheduler działa po tickach
  *
  * Komentarze są po polsku i prostym językiem.
@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MainPluginLifecycleIT extends MockBukkitPluginTestBase {
 
     @Test
-    @DisplayName("Plugin jest włączony i ma zarejestrowaną komendę /ecraft")
+    @DisplayName("Plugin jest włączony i ma zarejestrowaną komendę /4x4 (alias: /ecraft)")
     void pluginIsEnabledAndHasCommand() {
         // Dado: plugin jest ładowany w bazie testowej
         assertNotNull(plugin, "Plugin powinien być załadowany");
@@ -42,10 +42,16 @@ class MainPluginLifecycleIT extends MockBukkitPluginTestBase {
 
         // To: komenda istnieje i ma executor
         assertTrue(plugin instanceof Main, "W tym projekcie main class to pl.com.sofitfy.enhanced_containers.Main");
-        PluginCommand cmd = ((Main) plugin).getCommand("ecraft");
-        assertNotNull(cmd, "Komenda ecraft powinna istnieć (plugin.yml)");
-        assertNotNull(cmd.getExecutor(), "Komenda ecraft powinna mieć ustawiony executor");
-        assertTrue(cmd.getExecutor() instanceof CraftCommand, "Executor powinien być CraftCommand");
+
+        PluginCommand mainCmd = ((Main) plugin).getCommand("4x4");
+        assertNotNull(mainCmd, "Komenda 4x4 powinna istnieć (plugin.yml)");
+        assertNotNull(mainCmd.getExecutor(), "Komenda 4x4 powinna mieć ustawiony executor");
+        assertTrue(mainCmd.getExecutor() instanceof CraftCommand, "Executor powinien być CraftCommand");
+
+        PluginCommand aliasCmd = ((Main) plugin).getCommand("ecraft");
+        assertNotNull(aliasCmd, "Alias ecraft powinien istnieć (plugin.yml)");
+        assertNotNull(aliasCmd.getExecutor(), "Alias ecraft powinien mieć ustawiony executor");
+        assertSame(mainCmd.getExecutor(), aliasCmd.getExecutor(), "Alias ecraft powinien wskazywać na ten sam executor co 4x4");
     }
 
     @Test

@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeDraft;
+import pl.com.sofitfy.enhanced_containers.crafting.recipe.InputItemStackNormalizer;
 
 /**
  * RecipeEditorGUI - edytor receptur dla adminów
@@ -86,7 +87,9 @@ public class RecipeEditorGUI {
                 if (row != null) {
                     for (ItemStack item : row) {
                         if (slotIndex < GRID_SLOTS.length) {
-                            inventory.setItem(GRID_SLOTS[slotIndex], item);
+                            // W inputach ilość nie jest częścią receptury.
+                            // Nawet jeśli w configu ktoś miał stare dane z amount>1, to w GUI pokazujemy 1.
+                            inventory.setItem(GRID_SLOTS[slotIndex], InputItemStackNormalizer.toSingleOrNull(item));
                             slotIndex++;
                         }
                     }
@@ -172,8 +175,9 @@ public class RecipeEditorGUI {
                 if (item == null || item.getType().isAir()) {
                     inputPattern[row][col] = null;
                 } else {
-                    // Sklonuj item aby nie modyfikować oryginalny
-                    inputPattern[row][col] = item.clone();
+                    // W inputach receptury ilość NIE jest potrzebna.
+                    // Wymuszamy amount=1, żeby w configu nie było "kosztów" typu 64 w jednym slocie.
+                    inputPattern[row][col] = InputItemStackNormalizer.toSingleOrNull(item);
                 }
             }
         }

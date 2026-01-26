@@ -49,4 +49,37 @@ public class NmsCraftingEngine {
             return null;
         }
     }
+
+    /**
+     * Jak getNMSCraftingResult, ale zwraca wynik TYLKO jeśli matchowana receptura jest shapeless.
+     *
+     * To jest potrzebne dla naszego fallbacku 4x4 -> 3x3:
+     * - w shapeless chcemy dopuścić "dowolne sloty" i traktować je jakby były obok siebie,
+     * - ale nie chcemy w ten sposób przypadkiem matchować receptur shaped.
+     */
+    public ItemStack getNMSShapelessCraftingResult(ItemStack[] matrix, World bukkitWorld) {
+        if (matrix == null) {
+            throw new IllegalArgumentException("matrix must not be null");
+        }
+        if (matrix.length != 9) {
+            throw new IllegalArgumentException("matrix must be length 9");
+        }
+        if (bukkitWorld == null) {
+            throw new IllegalArgumentException("world must not be null");
+        }
+
+        try {
+            Class<?> directClass = Class.forName(
+                "pl.com.sofitfy.enhanced_containers.crafting.nms.NmsCraftingEngineDirect"
+            );
+
+            Object direct = directClass.getDeclaredConstructor().newInstance();
+            Method method = directClass.getMethod("getNMSShapelessCraftingResult", ItemStack[].class, World.class);
+            return (ItemStack) method.invoke(direct, matrix, bukkitWorld);
+        } catch (ClassNotFoundException e) {
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 }

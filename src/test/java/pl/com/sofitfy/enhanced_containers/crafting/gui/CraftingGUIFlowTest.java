@@ -4,6 +4,7 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -26,7 +27,7 @@ import static org.mockito.Mockito.*;
  * Komentarze są po polsku, a teksty w grze (wiadomości) po angielsku.
  */
 @DisplayName("CraftingGUIListener - flow craftingu")
-@Tag("unit")
+@Disabled("Przeniesione do CraftingGUIFlowIT (test integracyjny)")
 class CraftingGUIFlowTest extends MockBukkitTestBase {
 
     @BeforeEach

@@ -141,7 +141,7 @@ class CraftCommandPermissionTest {
     }
 
     @Test
-    @DisplayName("Brak argumentu - wiadomość o użyciu /ecraft sign_item")
+    @DisplayName("Brak argumentu - wiadomość o użyciu /4x4 sign_item")
     void missingArgumentShowsUsageMessage() {
         // Przygotowanie: gracz z permisją ale bez argumentu
         when(playerWithPermission.hasPermission("plethoras.tools.use")).thenReturn(true);

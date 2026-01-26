@@ -3,6 +3,7 @@ package pl.com.sofitfy.enhanced_containers.crafting.gui;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Slot 53: Przycisk następna strona
  */
 @DisplayName("RecipeSelectionGUI - testy")
-@Tag("unit")
+@Disabled("Przeniesione do RecipeSelectionGUIIT (test integracyjny)")
 class RecipeSelectionGUITest extends MockBukkitTestBase {
 
     @Test

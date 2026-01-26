@@ -4,11 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.Recipe;
-import org.bukkit.event.inventory.PrepareItemCraftEvent;
-import org.bukkit.event.inventory.InventoryType;
-import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
@@ -104,6 +100,61 @@ public class VanillaCraftingSimulator {
             // Zwróć wynik jeśli znaleziony
             return baseResult != null && baseResult.getType() != Material.AIR && baseResult.getAmount() > 0 ? baseResult.clone() : null;
             
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Wersja tryMatch, która akceptuje tylko receptury shapeless.
+     *
+     * Używamy tego w dodatkowym fallbacku dla 4x4:
+     * - jeśli składniki są rozrzucone po 4x4, to "upakowujemy" je do 3x3,
+     * - ale nie chcemy, żeby przez to zaczęły pasować receptury shaped.
+     */
+    public ItemStack tryMatchShapelessOnly(Player player, ItemStack[] grid) {
+        if (player == null || grid == null || grid.length != 9) {
+            return null;
+        }
+
+        try {
+            ItemStack[] matrix = new ItemStack[9];
+            for (int i = 0; i < 9; i++) {
+                ItemStack item = grid[i];
+                boolean isEmpty = item == null || item.getType().isAir();
+                matrix[i] = isEmpty ? new ItemStack(Material.AIR) : item;
+            }
+
+            // 1) NMS (najdokładniejsze): tylko shapeless
+            ItemStack baseResult = null;
+            try {
+                baseResult = nmsCraftingEngine.getNMSShapelessCraftingResult(matrix, player.getWorld());
+            } catch (Throwable ignored) {
+                baseResult = null;
+            }
+
+            // 2) Bukkit API: tylko shapeless
+            if (baseResult == null || baseResult.getType() == Material.AIR) {
+                Recipe recipe = Bukkit.getCraftingRecipe(matrix, player.getWorld());
+                // W Paper/Spigot vanilla receptury shapeless często NIE są instancją org.bukkit.inventory.ShapelessRecipe
+                // (to klasa używana głównie do rejestracji receptur przez pluginy).
+                // Musimy więc dopuścić każdy crafting recipe, który NIE jest shaped.
+                if (recipe != null && !(recipe instanceof org.bukkit.inventory.ShapedRecipe)) {
+                    ItemStack res = recipe.getResult();
+                    if (res != null && res.getType() != Material.AIR) {
+                        baseResult = res.clone();
+                    }
+                }
+            }
+
+            // 3) Ostateczny fallback dla "special" receptur (naprawy, farbowanie zbroi, fajerwerki).
+            // One w praktyce zachowują się jak shapeless/complex i nie powinny zależeć od pozycjonowania.
+            if (baseResult == null || baseResult.getType() == Material.AIR) {
+                baseResult = tryResolveSpecialVanilla(matrix);
+            }
+
+            return baseResult != null && baseResult.getType() != Material.AIR && baseResult.getAmount() > 0 ? baseResult.clone() : null;
         } catch (Exception e) {
             e.printStackTrace();
             return null;
@@ -439,18 +490,34 @@ public class VanillaCraftingSimulator {
 
             // 2. Sprawdź wymiary shrunken grid'u
             int[] dimensions = GridShrinkWrapper.getShrunkDimensions(grid4x4);
-            if (dimensions == null || dimensions[0] > 3 || dimensions[1] > 3) {
-                // Siatka większa niż vanilla crafting - nie pasuje
+            if (dimensions == null) {
                 return null;
+            }
+
+            // Jeśli bounding box jest większy niż 3x3, to shaped i tak nie zadziała.
+            // ALE shapeless powinien zadziałać, jeśli mamy max 9 zajętych slotów.
+            if (dimensions[0] > 3 || dimensions[1] > 3) {
+                return ShapelessGridCompactor
+                    .packToVanilla3x3IfAtMost9Occupied(grid4x4)
+                    .map(packed3x3 -> tryMatchShapelessOnly(player, packed3x3))
+                    .orElse(null);
             }
 
             int height = dimensions[0];
             int width = dimensions[1];
 
-            // Pad do 3x3
+            // 3) Najpierw ścieżka dla VANILLA shapeless/complex:
+            // traktujemy to jak normalny crafting 3x3 (do 9 itemów, 3 na rząd), niezależnie od pozycji w 4x4.
+            ItemStack packedResult = ShapelessGridCompactor
+                .packToVanilla3x3IfAtMost9Occupied(grid4x4)
+                .map(packed3x3 -> tryMatchShapelessOnly(player, packed3x3))
+                .orElse(null);
+            if (packedResult != null) {
+                return packedResult;
+            }
+
+            // 4) Dopiero potem VANILLA shaped: dopuszczamy 3x3 w dowolnym miejscu 4x4 (shrink-wrap + pad).
             ItemStack[] padded3x3 = pad3x3(shrunken, height, width);
-            
-            // 3. Skorzystaj z normalnego tryMatch dla 3x3
             return tryMatch(player, padded3x3);
 
         } catch (Exception e) {

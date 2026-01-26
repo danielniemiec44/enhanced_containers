@@ -5,6 +5,8 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCreativeEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +38,9 @@ class CraftingGUIListenerEventTest {
 
         listener = new CraftingGUIListener();
         player = mock(Player.class);
+        PlayerInventory playerInventory = mock(PlayerInventory.class);
+        when(player.getInventory()).thenReturn(playerInventory);
+        when(playerInventory.getStorageContents()).thenReturn(new ItemStack[0]);
         guiInventory = mock(Inventory.class);
         gui = mock(CraftingGUI.class);
 

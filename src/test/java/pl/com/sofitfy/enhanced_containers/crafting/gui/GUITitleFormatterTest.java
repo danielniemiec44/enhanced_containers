@@ -14,6 +14,20 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Formatowanie tytułów okien z Custom Font'ami")
 public class GUITitleFormatterTest {
 
+    private static int countChar(String text, char searched) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == searched) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static String expectedTitleWithCursorBackCount(int cursorBackCount) {
+        return "§r§f§l" + "\uF808".repeat(cursorBackCount) + "\uE001";
+    }
+
     @Nested
     @DisplayName("Generowanie tytułu craftingu")
     class CraftingTitleTests {
@@ -37,16 +51,10 @@ public class GUITitleFormatterTest {
             String title = GUITitleFormatter.getCraftingTitle();
 
             // Kiedy: sprawdzam czy zawiera znaki cofnięcia kursora
-            // To: powinien zawierać \uF808 (osiem razy) dla lepszego wycentrowania
-            int cursorBackCount = 0;
-            for (char c : title.toCharArray()) {
-                if (c == '\uF808') {
-                    cursorBackCount++;
-                }
-            }
-
-            assertEquals(8, cursorBackCount,
-                "Tytuł powinien zawierać 8 znaków \\uF808 do cofnięcia kursora");
+            // To: powinien zawierać \uF808 odpowiednią liczbę razy dla lepszego wycentrowania
+            int cursorBackCount = countChar(title, '\uF808');
+            assertEquals(GUITitleFormatter.CURSOR_BACK_COUNT, cursorBackCount,
+                "Tytuł powinien zawierać " + GUITitleFormatter.CURSOR_BACK_COUNT + " znaków \\uF808 do cofnięcia kursora");
         }
 
         @Test
@@ -78,16 +86,16 @@ public class GUITitleFormatterTest {
         }
 
         @Test
-        @DisplayName("Struktura tytułu craftingu powinna być: §r§f§l + 8x\\uF808 + \\uE001")
+        @DisplayName("Struktura tytułu craftingu powinna być: §r§f§l + N x\\uF808 + \\uE001")
         void testCraftingTitleStructure() {
             // Dado: pobieram tytuł craftingu
             String title = GUITitleFormatter.getCraftingTitle();
 
             // Kiedy: sprawdzam strukturę tytułu
-            // To: powinien mieć format: §r§f§l\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uE001 (reset + biały + pogrubienie + 8 cofnięć)
-            String expectedFormat = "§r§f§l\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uE001";
+            // To: powinien mieć format: §r§f§l + 17 znaków cofnięcia i Custom Font
+            String expectedFormat = expectedTitleWithCursorBackCount(GUITitleFormatter.CURSOR_BACK_COUNT);
             assertEquals(expectedFormat, title,
-                "Tytuł craftingu powinien mieć format: §r (reset) + §f§l (biały+pogrubienie) + 8x\\uF808 + \\uE001");
+                "Tytuł craftingu powinien mieć format: §r (reset) + §f§l (biały+pogrubienie) + " + GUITitleFormatter.CURSOR_BACK_COUNT + "x\\uF808 + \\uE001");
         }
     }
 
@@ -108,16 +116,16 @@ public class GUITitleFormatterTest {
         }
 
         @Test
-        @DisplayName("Tytuł edytora powinien być taki sam jak craftingu")
-        void testEditorTitleSameAsCrafting() {
-            // Dado: pobieram oba tytuły
-            String craftingTitle = GUITitleFormatter.getCraftingTitle();
-            String editorTitle = GUITitleFormatter.getEditorTitle();
+        @DisplayName("Tytuł edytora powinien zawierać znaki cofnięcia kursora")
+        void testEditorTitleHasCursorBack() {
+            // Dado: pobieram tytuł edytora
+            String title = GUITitleFormatter.getEditorTitle();
 
-            // Kiedy: porównuję tytuły
-            // To: powinny być identyczne (oba używają tej samej tekstury)
-            assertEquals(craftingTitle, editorTitle,
-                "Tytuł edytora powinien być taki sam jak craftingu (taka sama tekstura)");
+            // Kiedy: zliczam znaki cofnięcia kursora
+            // To: powinien zawierać \uF808 odpowiednią liczbę razy dla lepszego wycentrowania
+            int cursorBackCount = countChar(title, '\uF808');
+            assertEquals(GUITitleFormatter.CURSOR_BACK_COUNT, cursorBackCount,
+                "Tytuł edytora powinien zawierać " + GUITitleFormatter.CURSOR_BACK_COUNT + " znaków \\uF808 do cofnięcia kursora");
         }
 
         @Test
@@ -146,6 +154,19 @@ public class GUITitleFormatterTest {
             int boldPos = title.indexOf("§f");
             assertTrue(resetPos < boldPos,
                 "Reset (§r) musi być PRZED białym kolorem (§f)");
+        }
+
+        @Test
+        @DisplayName("Struktura tytułu edytora powinna być: §r§f§l + N x\\uF808 + \\uE001")
+        void testEditorTitleStructure() {
+            // Dado: pobieram tytuł edytora
+            String title = GUITitleFormatter.getEditorTitle();
+
+            // Kiedy: sprawdzam strukturę tytułu
+            // To: powinien mieć format: §r§f§l + 17 znaków cofnięcia i Custom Font
+            String expectedFormat = expectedTitleWithCursorBackCount(GUITitleFormatter.CURSOR_BACK_COUNT);
+            assertEquals(expectedFormat, title,
+                "Tytuł edytora powinien mieć format: §r (reset) + §f§l (biały+pogrubienie) + " + GUITitleFormatter.CURSOR_BACK_COUNT + "x\\uF808 + \\uE001");
         }
     }
 
@@ -235,33 +256,21 @@ public class GUITitleFormatterTest {
         }
 
         @Test
-        @DisplayName("Scenariusz: oba okna (crafting i edytor) mają tę samą teksturę")
-        void testBothWindowsHaveSameTexture() {
-            // Dado: tworzę tytuły dla obu okien
-            String craftingTitle = GUITitleFormatter.getCraftingTitle();
-            String editorTitle = GUITitleFormatter.getEditorTitle();
-
-            // Kiedy: porównuję tytuły
-            // To: powinny być identyczne (bo obie tekstury są takie same)
-            assertEquals(craftingTitle, editorTitle,
-                "Oba okna powinny mieć tę samą teksturę");
-        }
-
-        @Test
-        @DisplayName("Scenariusz: tytuł ma strukturę §r§f§l + 8x\\uF808 + \\uE001 dla lepszego wycentrowania i bez przyciemniania")
+        @DisplayName("Scenariusz: tytuły mają strukturę reset+białe+pogrubienie + cofnięcia + Custom Font")
         void testTitleHasProperCentering() {
             // Dado: pobieram tytuły
             String craftingTitle = GUITitleFormatter.getCraftingTitle();
             String editorTitle = GUITitleFormatter.getEditorTitle();
 
             // Kiedy: sprawdzam strukturę
-            // To: powinny zaczynać się od reset + biały + pogrubienie, potem 8 znaków cofnięcia i Custom Font
-            String expectedFormat = "§r§f§l\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uE001";
+            // To: powinny zaczynać się od reset + biały + pogrubienie, potem cofnięcia i Custom Font
+            String expectedCraftingFormat = expectedTitleWithCursorBackCount(GUITitleFormatter.CURSOR_BACK_COUNT);
+            String expectedEditorFormat = expectedTitleWithCursorBackCount(GUITitleFormatter.CURSOR_BACK_COUNT);
 
-            assertEquals(expectedFormat, craftingTitle,
-                "Tytuł craftingu powinien mieć format: reset + biały + pogrubienie + 8 cofnięć");
-            assertEquals(expectedFormat, editorTitle,
-                "Tytuł edytora powinien mieć format: reset + biały + pogrubienie + 8 cofnięć");
+            assertEquals(expectedCraftingFormat, craftingTitle,
+                "Tytuł craftingu powinien mieć format: reset + biały + pogrubienie + " + GUITitleFormatter.CURSOR_BACK_COUNT + " cofnięć");
+            assertEquals(expectedEditorFormat, editorTitle,
+                "Tytuł edytora powinien mieć format: reset + biały + pogrubienie + " + GUITitleFormatter.CURSOR_BACK_COUNT + " cofnięć");
         }
     }
 
@@ -319,10 +328,6 @@ public class GUITitleFormatterTest {
                 "Tytuł wyboru powinien być inny od craftingu");
             assertNotEquals(selectionTitle, editorTitle,
                 "Tytuł wyboru powinien być inny od edytora");
-            
-            // Dodatkowo: tytuły craftingu i edytora powinny być identyczne
-            assertEquals(craftingTitle, editorTitle,
-                "Tytuły craftingu i edytora powinny być identyczne (oba z Custom Font)");
         }
     }
 }

@@ -7,6 +7,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import pl.com.sofitfy.enhanced_containers.Main;
 import pl.com.sofitfy.enhanced_containers.config.ConfigManager;
@@ -19,14 +20,13 @@ import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeSelectionGUI;
 import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeSelectionListener;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeDraft;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeManager;
-import net.kyori.adventure.text.Component;
 
 /**
  * CraftCommand - obsługa komendy /4x4 (alias: /ecraft)
  *
- * Komenda główna do craftingu i edycji receptur
+ * Komenda główna do craftingu i edycji receptur.
  * Obsługuje subkomendy:
- * - /4x4 - otwiera GUI craftingu 4x4
+ * - /4x4 - otwiera GUI craftingu
  * - /4x4 new - tworzy nową recepturę (edytor)
  * - /4x4 edit - edytuje istniejącą recepturę
  * - /4x4 sign_item <nazwa> - zmienia display name item'u w ręce
@@ -44,6 +44,10 @@ public class CraftCommand implements CommandExecutor {
         this.guiListener = guiListener;
         this.editorListener = editorListener;
         this.selectionListener = selectionListener;
+    }
+
+    public CraftCommand(ConfigManager configManager, CraftingGUIListener guiListener, RecipeEditorListener editorListener, RecipeSelectionListener selectionListener) {
+        this(null, configManager, guiListener, editorListener, selectionListener);
     }
 
     @Override
@@ -102,13 +106,13 @@ public class CraftCommand implements CommandExecutor {
 
             default:
                 player.sendMessage(Main.PLUGIN_PREFIX + "§cUnknown subcommand!");
-                player.sendMessage("§7Available commands: /4x4, /4x4 new, /4x4 edit, /4x4 sign_item <name>");
+                player.sendMessage("§7Available commands: /4x4, /4x4 new, /4x4 edit, /4x4 sign_item <name> (alias: /ecraft)");
                 return true;
         }
     }
 
     /**
-    * Obsługa /4x4 - otwórz GUI craftingu (gracz craftuje)
+     * Obsługa /4x4 - otwórz GUI craftingu
      */
     private boolean handlePlayCraft(Player player) {
         if (configManager == null) {
@@ -134,6 +138,10 @@ public class CraftCommand implements CommandExecutor {
         // GUI ZAWSZE ma 54 sloty (9x6), bez możliwości zmiany!
         String guiTitle = GUITitleFormatter.getCraftingTitle();
         CraftingGUI gui = new CraftingGUI(player, guiTitle);
+        if (gui == null) {
+            player.sendMessage(Main.PLUGIN_PREFIX + "§cError: Can't create GUI!");
+            return true;
+        }
 
         // Zarejestruj GUI w listenera (żeby wiedział że to okienko jest otwarte)
         guiListener.registerGUI(gui);
@@ -141,16 +149,29 @@ public class CraftCommand implements CommandExecutor {
         player.openInventory(gui.getInventory());
         
         // Zaktualizuj output slot przy otwarciu (pokaż czy jest jakaś receptura dla pustego gridu)
-        Bukkit.getScheduler().runTask(
-            plugin,
-            () -> guiListener.updateOutput(player, gui)
-        );
+        JavaPlugin pluginToUse = this.plugin;
+        if (pluginToUse == null) {
+            Plugin resolved = Bukkit.getPluginManager().getPlugin("PlethorasExtendedTools");
+            if (resolved instanceof JavaPlugin) {
+                pluginToUse = (JavaPlugin) resolved;
+            }
+        }
+
+        if (pluginToUse != null && pluginToUse.isEnabled()) {
+            Bukkit.getScheduler().runTask(
+                pluginToUse,
+                () -> guiListener.updateOutput(player, gui)
+            );
+        } else {
+            // Fallback: w praktyce i tak jesteśmy na main thread, więc możemy wykonać od razu.
+            guiListener.updateOutput(player, gui);
+        }
 
         return true;
     }
 
     /**
-    * Obsługa /4x4 new - stwórz nową recepturę (edytor)
+        * Obsługa /4x4 new - stwórz nową recepturę (edytor)
      *
      * Generuje nowe ID receptury i otwiera edytor
      */
@@ -180,7 +201,7 @@ public class CraftCommand implements CommandExecutor {
     }
 
     /**
-    * Obsługa /4x4 edit [numer_strony] - edytuj recepturę z selektora
+        * Obsługa /4x4 edit [numer_strony] - edytuj recepturę z selektora
      *
      * Wyświetla listę wszystkich receptur do edycji w GUI (z paginacją).
      * Admin klika na recepturę aby ją edytować.
@@ -224,7 +245,7 @@ public class CraftCommand implements CommandExecutor {
     }
 
     /**
-    * Obsługa /4x4 sign_item <nazwa> - zmień display name item'u w ręce
+        * Obsługa /4x4 sign_item <nazwa> - zmień display name item'u w ręce
      *
      * Gracz może wpisać dowolną nazwę z formatowaniem:
      * - Kody kolorów: &c (czerwony), &a (zielony), &6 (złoty) itd
@@ -259,7 +280,7 @@ public class CraftCommand implements CommandExecutor {
             return true;
         }
 
-        meta.displayName(Component.text(newName));
+        meta.setDisplayName(newName);
         itemInHand.setItemMeta(meta);
 
         player.sendMessage(Main.PLUGIN_PREFIX + "§a✓ Item renamed to: " + newName);

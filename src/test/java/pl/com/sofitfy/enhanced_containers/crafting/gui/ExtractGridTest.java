@@ -3,6 +3,7 @@ package pl.com.sofitfy.enhanced_containers.crafting.gui;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
@@ -11,6 +12,7 @@ import pl.com.sofitfy.enhanced_containers.testutils.MockBukkitPluginTestBase;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("CraftingGUIListener - extract3x3Grid")
+@Disabled("Przeniesione do ExtractGridIT (test integracyjny)")
 class ExtractGridTest extends MockBukkitPluginTestBase {
     
     private CraftingGUIListener listener;

@@ -977,6 +977,28 @@ public class CraftingGUIListener implements Listener {
             }
         }
 
+        // Jeśli nie udało się zmatchować przez VanillaRecipeLoader (np. complex recipe: fireworks/repair/dyeing),
+        // użyj tej samej ścieżki co do wyliczania outputu (VanillaCraftingSimulator) i zużyj inputy w stylu vanilli.
+        // To eliminuje przypadki, gdzie output istnieje, ale kliknięcie/zużycie mówi "nie da się".
+        ItemStack simulated = tryVanillaCrafting4x4Fallback(player, gridItems);
+        if (simulated != null && simulated.getAmount() == output.getAmount() && simulated.isSimilar(output)) {
+            if (event != null) {
+                event.setCursor(newCursor);
+            }
+            player.setItemOnCursor(newCursor);
+
+            gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+            if (event != null) {
+                event.setCurrentItem(null);
+            }
+
+            consumeAllOccupiedOnce(gridItems);
+            updateGridSlots(gui, gridItems);
+            updateOutput(player, gui);
+            runNextTickIfPossible(player::updateInventory);
+            return;
+        }
+
         // Żadna receptura nie pasowała - nie powinno się zdarzyć
         // (output był tam bo receptura pasowała wcześniej)
         // Bezpieczna fallback: daj graczowi output bez usuwania składników
@@ -990,6 +1012,24 @@ public class CraftingGUIListener implements Listener {
         }
         updateOutput(player, gui);
         runNextTickIfPossible(player::updateInventory);
+    }
+
+    private static void consumeAllOccupiedOnce(ItemStack[] gridItems) {
+        if (gridItems == null || gridItems.length != 16) {
+            return;
+        }
+
+        for (int i = 0; i < 16; i++) {
+            ItemStack item = gridItems[i];
+            if (item == null || item.getType().isAir()) {
+                continue;
+            }
+
+            item.setAmount(item.getAmount() - 1);
+            if (item.getAmount() <= 0) {
+                gridItems[i] = null;
+            }
+        }
     }
 
     /**
@@ -1151,6 +1191,15 @@ public class CraftingGUIListener implements Listener {
             }
         }
 
+        // Complex / NMS-only vanilla receptury: usuń 1 sztukę z każdego zajętego slotu,
+        // o ile simulator nadal widzi poprawny vanilla output dla tej siatki.
+        ItemStack simulated = tryVanillaCrafting4x4Fallback(player, gridItems);
+        if (simulated != null) {
+            consumeAllOccupiedOnce(gridItems);
+            updateGridSlots(gui, gridItems);
+            updateOutput(player, gui);
+        }
+
         // Żadna receptura nie pasowała - to nie powinno się stać
         // (bo output był tam wciśnięty)
     }
@@ -1239,6 +1288,66 @@ public class CraftingGUIListener implements Listener {
 
         // Jeśli nic nie znalezła - wyjdź
         if (foundRecipe == null || craftOutput == null || craftOutput.getType().isAir()) {
+            // Fallback: output mógł zostać wyliczony przez VanillaCraftingSimulator (complex recipe / tagi),
+            // którego nie ma na liście VanillaRecipeLoader. Obsłuż shift-click synchronicznie w porcjach,
+            // żeby nie blokować TPS.
+            ItemStack outputFromSlot = gui.getInventory().getItem(CraftingGUI.OUTPUT_SLOT);
+            if (outputFromSlot == null || outputFromSlot.getType().isAir()) {
+                return;
+            }
+
+            JavaPlugin pluginToUse = this.plugin;
+            if (pluginToUse == null && Bukkit.getServer() != null) {
+                try {
+                    for (org.bukkit.plugin.Plugin p : Bukkit.getPluginManager().getPlugins()) {
+                        if (p instanceof JavaPlugin && p.isEnabled()) {
+                            pluginToUse = (JavaPlugin) p;
+                            break;
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            if (pluginToUse == null) {
+                return;
+            }
+
+            ItemStack expected = outputFromSlot.clone();
+            new org.bukkit.scheduler.BukkitRunnable() {
+                private int crafted = 0;
+                private final int MAX_TOTAL = 10_000;
+                private final int PER_TICK = 64;
+
+                @Override
+                public void run() {
+                    if (!player.isOnline()) {
+                        cancel();
+                        return;
+                    }
+
+                    int craftedThisTick = 0;
+                    while (crafted < MAX_TOTAL && craftedThisTick < PER_TICK) {
+                        ItemStack[] currentGrid = extractGridItems(gui);
+                        ItemStack sim = tryVanillaCrafting4x4Fallback(player, currentGrid);
+                        if (sim == null || sim.getAmount() != expected.getAmount() || !sim.isSimilar(expected)) {
+                            cancel();
+                            CraftingGUIListener.this.updateOutput(player, gui);
+                            return;
+                        }
+
+                        addItemToPlayerOrDrop(player, expected.clone());
+                        consumeAllOccupiedOnce(currentGrid);
+                        updateGridSlots(gui, currentGrid);
+                        crafted++;
+                        craftedThisTick++;
+                    }
+
+                    CraftingGUIListener.this.updateOutput(player, gui);
+                    if (crafted >= MAX_TOTAL) {
+                        cancel();
+                    }
+                }
+            }.runTaskTimer(pluginToUse, 0L, 1L);
             return;
         }
 

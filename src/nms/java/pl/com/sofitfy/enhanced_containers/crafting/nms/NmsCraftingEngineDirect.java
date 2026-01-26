@@ -76,6 +76,61 @@ public class NmsCraftingEngineDirect {
         return bukkitResult;
     }
 
+    /**
+        * Wariant: zwraca wynik tylko jeśli pasująca receptura NIE jest shaped.
+     *
+     * Dzięki temu możemy robić "upakowanie" składników z 4x4 do 3x3
+     * bez ryzyka, że przypadkiem zmatchujemy recepturę shaped.
+     */
+    public ItemStack getNMSShapelessCraftingResult(ItemStack[] matrix, World bukkitWorld) {
+        if (matrix == null) {
+            throw new IllegalArgumentException("matrix must not be null");
+        }
+        if (matrix.length != 9) {
+            throw new IllegalArgumentException("matrix must be length 9");
+        }
+        if (!(bukkitWorld instanceof CraftWorld craftWorld)) {
+            return null;
+        }
+
+        ServerLevel level = craftWorld.getHandle();
+
+        CraftingContainer container = create3x3Container();
+        for (int i = 0; i < 9; i++) {
+            ItemStack bukkit = matrix[i];
+            net.minecraft.world.item.ItemStack nms = (bukkit == null || bukkit.getType().isAir())
+                ? net.minecraft.world.item.ItemStack.EMPTY
+                : CraftItemStack.asNMSCopy(bukkit);
+            container.setItem(i, nms);
+        }
+
+        Optional<RecipeHolder<CraftingRecipe>> recipe = level.getServer().getRecipeManager().getRecipeFor(
+            RecipeType.CRAFTING,
+            container.asCraftInput(),
+            level
+        );
+
+        if (recipe.isEmpty()) {
+            return null;
+        }
+
+        CraftingRecipe value = recipe.get().value();
+        // W vanilli wiele "shapeless" craftów jest realizowanych przez klasy specjalne
+        // (repair, dyeing, fireworks, itp.) i NIE są instancją ShapelessRecipe.
+        // Kluczowy warunek dla naszego use-case: odfiltrować TYLKO receptury shaped.
+        if (value instanceof net.minecraft.world.item.crafting.ShapedRecipe) {
+            return null;
+        }
+
+        net.minecraft.world.item.ItemStack result = value.assemble(container.asCraftInput(), level.registryAccess());
+        ItemStack bukkitResult = CraftItemStack.asBukkitCopy(result);
+        if (bukkitResult == null || bukkitResult.getType().isAir() || bukkitResult.getAmount() <= 0) {
+            return null;
+        }
+
+        return bukkitResult;
+    }
+
     private CraftingContainer create3x3Container() {
         AbstractContainerMenu dummy = new AbstractContainerMenu(null, -1) {
             @Override

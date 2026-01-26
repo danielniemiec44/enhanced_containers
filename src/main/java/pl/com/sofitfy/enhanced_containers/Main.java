@@ -77,7 +77,7 @@ public class Main extends JavaPlugin {
             getServer().getPluginManager().registerEvents(guiListener, this);
 
             // Słuchamy zdarzeń edytora receptur - kiedy admin edytuje recepturę
-            RecipeEditorListener editorListener = new RecipeEditorListener(configManager);
+            RecipeEditorListener editorListener = new RecipeEditorListener(this, configManager);
 
             // Rejestrujemy listener edytora
             getServer().getPluginManager().registerEvents(editorListener, this);

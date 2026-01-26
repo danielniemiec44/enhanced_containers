@@ -1,11 +1,18 @@
 package pl.com.sofitfy.enhanced_containers.crafting.gui;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.Plugin;
 import pl.com.sofitfy.enhanced_containers.Main;
 import pl.com.sofitfy.enhanced_containers.config.ConfigManager;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeDraft;
@@ -32,8 +39,10 @@ public class RecipeEditorListener implements Listener {
     private final Map<UUID, Map<Integer, org.bukkit.inventory.ItemStack>> lastGUIState = new HashMap<>();
 
     private final ConfigManager configManager;
+    private final Plugin plugin;
 
-    public RecipeEditorListener(ConfigManager configManager) {
+    public RecipeEditorListener(Plugin plugin, ConfigManager configManager) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.configManager = configManager;
     }
 
@@ -130,7 +139,7 @@ public class RecipeEditorListener implements Listener {
             player.sendMessage(Main.PLUGIN_PREFIX + "§7Item returned to your inventory!");
             
             // Ponownie otwórz edytor
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Main.getPlugin(Main.class), () -> {
+            Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
                 RecipeEditorGUI newEditor = new RecipeEditorGUI(player, editor.getDraft());
                 restoreGUIState(newEditor);
                 registerEditor(newEditor);
@@ -158,7 +167,7 @@ public class RecipeEditorListener implements Listener {
             player.sendMessage(Main.PLUGIN_PREFIX + "§c✗ " + editor.getErrorMessage());
 
             // Otwórz edytor znowu - gracz ma szansę poprawić
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Main.getPlugin(Main.class), () -> {
+            Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
                 RecipeEditorGUI newEditor = new RecipeEditorGUI(player, editor.getDraft());
                 restoreGUIState(newEditor);
                 registerEditor(newEditor);
@@ -180,13 +189,223 @@ public class RecipeEditorListener implements Listener {
             player.sendMessage(Main.PLUGIN_PREFIX + "§c✗ Error saving to file!");
 
             // Otwórz edytor znowu
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Main.getPlugin(Main.class), () -> {
+            Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
                 RecipeEditorGUI newEditor = new RecipeEditorGUI(player, editor.getDraft());
                 restoreGUIState(newEditor);
                 registerEditor(newEditor);
                 newEditor.open();
             }, 2L);
         }
+    }
+
+    /**
+     * Event - kliknięcie w edytorze receptur.
+     *
+     * Wymaganie:
+     * - W inputach receptury (grid 4x4) nie można mieć stacków > 1.
+     * - Nadmiar oddajemy graczowi do ekwipunku (a jeśli brak miejsca - drop na ziemię).
+     */
+    @EventHandler
+    public void onEditorInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
+        RecipeEditorGUI editor = activeEditors.get(playerId);
+        if (editor == null) {
+            return;
+        }
+
+        // Pilnujemy tylko wtedy, gdy górny inventory to nasz edytor.
+        if (event.getView() == null || event.getView().getTopInventory() != editor.getInventory()) {
+            return;
+        }
+
+        int topSize = event.getView().getTopInventory().getSize();
+        int rawSlot = event.getRawSlot();
+
+        // SHIFT+CLICK z dołu (ekwipunek gracza): NIE pozwalamy, żeby itemy wpadały w puste sloty tła.
+        // Zamiast tego wkładamy je tylko do gridu (po 1 na slot).
+        if (event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY
+            && event.getClickedInventory() != null
+            && event.getClickedInventory() == event.getView().getBottomInventory()) {
+            moveShiftClickedItemIntoEditorGrid(event, player, editor);
+            return;
+        }
+
+        // Blokada: w górnym inventory można klikać tylko input grid i output.
+        boolean isTopSlot = rawSlot >= 0 && rawSlot < topSize;
+        if (isTopSlot && !isAllowedEditorTopSlot(rawSlot)) {
+            event.setCancelled(true);
+            return;
+        }
+
+        // Najprościej i najbezpieczniej: po wykonaniu kliknięcia normalizujemy stan gridu.
+        // To łapie też shift-click, hotbar swap, merge itp.
+        Bukkit.getScheduler().scheduleSyncDelayedTask(
+            plugin,
+            () -> enforceInputStacksAreSingle(player, editor),
+            1L
+        );
+    }
+
+    /**
+     * Event - przeciąganie itemów (drag) w edytorze receptur.
+     * Też może wstawić stacki > 1, więc pilnujemy identycznie.
+     */
+    @EventHandler
+    public void onEditorInventoryDrag(InventoryDragEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
+        RecipeEditorGUI editor = activeEditors.get(playerId);
+        if (editor == null) {
+            return;
+        }
+
+        if (event.getView() == null || event.getView().getTopInventory() != editor.getInventory()) {
+            return;
+        }
+
+        int topSize = event.getView().getTopInventory().getSize();
+
+        // Blokada: drag nie może dotykać slotów tła w górnym inventory.
+        for (int rawSlot : event.getRawSlots()) {
+            if (rawSlot >= 0 && rawSlot < topSize && !isAllowedEditorTopSlot(rawSlot)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+
+        // Jeśli drag w ogóle nie dotyka slotów gridu - nie ma co robić.
+        boolean touchesGrid = false;
+        for (int rawSlot : event.getRawSlots()) {
+            if (RecipeEditorGUI.isGridSlot(rawSlot)) {
+                touchesGrid = true;
+                break;
+            }
+        }
+        if (!touchesGrid) {
+            return;
+        }
+
+        Bukkit.getScheduler().scheduleSyncDelayedTask(
+            plugin,
+            () -> enforceInputStacksAreSingle(player, editor),
+            1L
+        );
+    }
+
+    private static void enforceInputStacksAreSingle(Player player, RecipeEditorGUI editor) {
+        for (int slot : RecipeEditorGUI.GRID_SLOTS) {
+            ItemStack item = editor.getInventory().getItem(slot);
+            if (item == null) {
+                continue;
+            }
+
+            Material type = item.getType();
+            if (type == null || type.isAir()) {
+                editor.getInventory().setItem(slot, null);
+                continue;
+            }
+
+            int amount = item.getAmount();
+            if (amount <= 1) {
+                continue;
+            }
+
+            int extra = amount - 1;
+            item.setAmount(1);
+            editor.getInventory().setItem(slot, item);
+
+            ItemStack toReturn;
+            try {
+                toReturn = item.clone();
+            } catch (Exception ignored) {
+                toReturn = new ItemStack(type, 1);
+            }
+            toReturn.setAmount(extra);
+
+            // Zwróć nadmiar graczowi.
+            Map<Integer, ItemStack> leftover = player.getInventory().addItem(toReturn);
+            for (ItemStack left : leftover.values()) {
+                player.getWorld().dropItem(player.getLocation(), left);
+            }
+        }
+    }
+
+    private static boolean isAllowedEditorTopSlot(int rawSlot) {
+        return RecipeEditorGUI.isGridSlot(rawSlot) || RecipeEditorGUI.isOutputSlot(rawSlot);
+    }
+
+    private void moveShiftClickedItemIntoEditorGrid(InventoryClickEvent event, Player player, RecipeEditorGUI editor) {
+        ItemStack current = event.getCurrentItem();
+        if (current == null || current.getType() == null || current.getType().isAir()) {
+            return;
+        }
+
+        Inventory clicked = event.getClickedInventory();
+        if (clicked == null) {
+            return;
+        }
+
+        event.setCancelled(true);
+
+        int remaining = Math.max(0, current.getAmount());
+        if (remaining == 0) {
+            return;
+        }
+
+        ItemStack single;
+        try {
+            single = current.clone();
+        } catch (Exception ignored) {
+            single = new ItemStack(current.getType(), 1);
+        }
+        single.setAmount(1);
+
+        int moved = 0;
+        for (int slot : RecipeEditorGUI.GRID_SLOTS) {
+            if (remaining <= 0) {
+                break;
+            }
+
+            ItemStack existing = editor.getInventory().getItem(slot);
+            if (existing != null && existing.getType() != null && !existing.getType().isAir()) {
+                continue;
+            }
+
+            editor.getInventory().setItem(slot, single.clone());
+            remaining--;
+            moved++;
+        }
+
+        if (moved == 0) {
+            return;
+        }
+
+        if (remaining <= 0) {
+            clicked.setItem(event.getSlot(), null);
+        } else {
+            ItemStack newStack;
+            try {
+                newStack = current.clone();
+            } catch (Exception ignored) {
+                newStack = new ItemStack(current.getType(), remaining);
+            }
+            newStack.setAmount(remaining);
+            clicked.setItem(event.getSlot(), newStack);
+        }
+
+        // Dla pewności (np. gdy inne akcje zmienią sloty): dopnij normalizację w następnym ticku.
+        Bukkit.getScheduler().scheduleSyncDelayedTask(
+            plugin,
+            () -> enforceInputStacksAreSingle(player, editor),
+            1L
+        );
     }
 
     /**
@@ -199,7 +418,7 @@ public class RecipeEditorListener implements Listener {
         try {
             // Pobierz plik config
             File configFile = new File(
-                Main.getPlugin(Main.class).getDataFolder(),
+                plugin.getDataFolder(),
                 "config.yml"
             );
 

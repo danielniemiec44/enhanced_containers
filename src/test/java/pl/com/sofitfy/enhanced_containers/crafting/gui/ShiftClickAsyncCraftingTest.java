@@ -1,6 +1,7 @@
 package pl.com.sofitfy.enhanced_containers.crafting.gui;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
@@ -209,6 +210,14 @@ public class ShiftClickAsyncCraftingTest {
     @Nested
     @DisplayName("Performance Characteristics")
     public class PerformanceTests {
+
+        @BeforeEach
+        void requirePerformanceTestsEnabled() {
+            Assumptions.assumeTrue(
+                Boolean.getBoolean("runPerformanceTests"),
+                "Performance tests are disabled by default (run with -DrunPerformanceTests=true)"
+            );
+        }
 
         /**
          * Test: 10000 craftów w loop - musi być szybko.

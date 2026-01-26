@@ -7,9 +7,13 @@ package pl.com.sofitfy.enhanced_containers.crafting.gui;
  * z Resource Packa. Używa znaku \uE001 który mapuje się na teksturę ex_crafting.png
  */
 public class GUITitleFormatter {
-    // Znak do cofnięcia kursora o 8 pikseli w lewo
+    // Znak do cofnięcia kursora w lewo (Custom Font)
     // Przydatne do wycentrowania tekstury w tytule okna
     private static final String CURSOR_BACK = "\uF808";
+
+    // Ile razy powtarzamy cofnięcie kursora dla wycentrowania
+    // Uwaga: ta wartość zależy od metryk fontu (np. advance w RP)
+    static final int CURSOR_BACK_COUNT = 9;
 
     // Znak Custom Font dla tekstury ex_crafting.png
     // Zdefiniowany w default.json jako:
@@ -35,12 +39,12 @@ public class GUITitleFormatter {
     /**
      * Stwórz tytuł okna craftingu z Custom Font teksturą
      *
-     * Zwraca: §r§f§l\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uE001
+        * Zwraca: §r§f§l\uF808 x9 + \uE001
      * Gdzie:
      * - §r to reset formatowania (wyczyści domyślne kodowanie GUI Minecrafta)
      * - §f to biały kolor (wymusza jasny kolor po resetowaniu)
      * - §l to pogrubienie (przebija przez drop shadow i overlay)
-     * - \uF808 to cofnięcie kursora o 8 pikseli (powtórzone 8 razy)
+        * - \uF808 to cofnięcie kursora o 8 pikseli (powtórzone 9 razy)
      * - \uE001 to Custom Font Character wyświetlający ex_crafting.png
      *
      * Efekt: tekstura ex_crafting.png jest wyświetlana jasno bez przyciemniania
@@ -51,14 +55,13 @@ public class GUITitleFormatter {
     public static String getCraftingTitle() {
         // §r - najpierw resetuj formatowanie
         // §f§l - potem wymusz biały + pogrubienie
-        return RESET_FORMAT + WHITE_COLOR + BOLD_FORMAT + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CUSTOM_FONT_CHAR;
+        return RESET_FORMAT + WHITE_COLOR + BOLD_FORMAT + CURSOR_BACK.repeat(CURSOR_BACK_COUNT) + CUSTOM_FONT_CHAR;
     }
 
     /**
      * Stwórz tytuł okna edytora receptury z Custom Font teksturą
      *
-     * Format: §r§f§l\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uF808\uE001
-     * (identyczne do craftingu, bo edytor też używa tego samego layoutu)
+        * Format: §r§f§l\uF808 x9 + \uE001
      *
      * Efekt: tekstura ex_crafting.png jest wyświetlana jasno bez przyciemniania
      * (reset + biały + pogrubienie przebijają drop shadow i overlay GUI)
@@ -68,7 +71,7 @@ public class GUITitleFormatter {
     public static String getEditorTitle() {
         // §r - najpierw resetuj formatowanie
         // §f§l - potem wymusz biały + pogrubienie
-        return RESET_FORMAT + WHITE_COLOR + BOLD_FORMAT + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CURSOR_BACK + CUSTOM_FONT_CHAR;
+        return RESET_FORMAT + WHITE_COLOR + BOLD_FORMAT + CURSOR_BACK.repeat(CURSOR_BACK_COUNT) + CUSTOM_FONT_CHAR;
     }
 
     /**
