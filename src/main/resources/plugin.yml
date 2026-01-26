@@ -1,0 +1,27 @@
+name: PlethorasExtendedTools
+main: pl.com.sofitfy.enhanced_containers.Main
+version: 2.1
+api-version: 1.21
+description: Custom 4x4 crafting and in-game recipe editor for Plethora's Network
+author: DeeRave
+
+commands:
+  "4x4":
+    description: Main command for 4x4 crafting and recipe editing
+    permission: plethoras.tools.use
+    aliases:
+      - ecraft
+
+permissions:
+  plethoras.tools.use:
+    description: Allows using the 4x4 crafting GUI
+    default: true
+  plethoras.tools.admin:
+    description: Allows creating and editing recipes in-game
+    default: op
+  plethoras.tools.sign_item:
+    description: Allows using the /4x4 sign_item command to rename items
+    default: false
+
+
+

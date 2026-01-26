@@ -1,0 +1,42 @@
+# ═══════════════════════════════════════════════════════════
+# Plethoras Extended Tools - Crafting Configuration
+# ═══════════════════════════════════════════════════════════
+# ⚠️  WAŻNE: Rozmiar inventoria jest ZAWSZE 54 sloty (9×6)
+#     Definiowany w Main.java - NIE ZMIENIAJ GO TUTAJ!
+# ═══════════════════════════════════════════════════════════
+
+crafting:
+  gui:
+    # Tytuł okienka craftingu - możesz zmienić na dowolny tekst
+    # Obsługuje kody kolorów (§6 = złoty, §a = zielony itd)
+    title: "§6✨ Crafting Station"
+
+    # ⚠️  Rozmiar inventoria: ZAWSZE 54 sloty (9 kolumn × 6 rzędów)
+    # Zdefiniowany w Main.java - NIE BĘDZIE LICZONY Z TEGO PLIKU!
+    # Layout: 4x4 grid input + 1 output slot (24) + puste + inventory gracza
+
+  # ═══════════════════════════════════════════════════════════
+  # Receptury Craftingu
+  # ═══════════════════════════════════════════════════════════
+  #
+  # Format receptury - przykład poniżej
+  # - id: unique_recipe_id
+  #   name: "Display Name"
+  #   input:
+  #     - "MATERIAL,MATERIAL,MATERIAL"  # Rząd 1
+  #     - "MATERIAL,MATERIAL,MATERIAL"  # Rząd 2
+  #     - "0,MATERIAL,0"                # 0 = pusty slot
+  #   output:
+  #     material: OUTPUT_MATERIAL
+  #     amount: 1
+  #     custom-name: "§cNiestandardowa nazwa"    # Opcjonalne
+  #     lore:                                     # Opcjonalne
+  #       - "§7Linia opisu 1"
+  #       - "§7Linia opisu 2"
+  #   permission: "plethoras.tools.recipe_id"    # Opcjonalne (dowolny node z permission pluginu)
+  # ═══════════════════════════════════════════════════════════
+
+  recipes: []
+  # Receptury dodaj poprzez /4x4 new w grze! (alias: /ecraft)
+  # Admin będzie tworzyć receptury edytorem i zapisywać do tego config'u automatycznie
+

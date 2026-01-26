@@ -4,14 +4,152 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>pl.com.sofitfy.enhanced-containers</groupId>
-    <artifactId>enhanced-containers</artifactId>
+    <groupId>pl.com.sofitfy.enhanced_containers</groupId>
+    <artifactId>enhanced_containers</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <mockito.version>5.12.0</mockito.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Paper API - 1.21.11 -->
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>1.21.11-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- JUnit 5 for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Mockito for mocking -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- MockBukkit v4 dla Paper 1.21.11 (z exclusions) -->
+        <dependency>
+            <groupId>org.mockbukkit.mockbukkit</groupId>
+            <artifactId>mockbukkit-v1.21</artifactId>
+            <version>4.101.0</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.papermc.paper</groupId>
+                    <artifactId>paper-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>net.kyori</groupId>
+                    <artifactId>adventure-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <source>17</source>
+                    <target>17</target>
+                </configuration>
+            </plugin>
+
+            <!--
+              Uruchamianie testów JUnit 5.
+              Bez tego Maven potrafi odpalić 0 testów (zwłaszcza przy zagnieżdżonych @Nested).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                                        <!--
+                                            Mockito (inline) używa Byte Buddy. Na nowszych JDK (np. 25)
+                                            Byte Buddy wymaga trybu eksperymentalnego, inaczej nie da się mockować
+                                            klas Bukkit/Paper w testach.
+                                        -->
+                                        <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                    <!--
+                      Testy jednostkowe (domyślnie): uruchamiamy wszystko poza @Tag("integration").
+                      Integracyjne odpalamy przez Failsafe w fazie verify.
+                    -->
+                    <properties>
+                        <configurationParameters>
+                            junit.jupiter.extensions.autodetection.enabled=true
+                            junit.jupiter.tags.exclude=integration
+                        </configurationParameters>
+                    </properties>
+                </configuration>
+            </plugin>
+
+            <!--
+              Testy integracyjne (MockBukkit + zdarzenia + scheduler).
+              Odpalane przez: mvn verify
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                    <includes>
+                        <include>**/*IT.java</include>
+                        <include>**/*IntegrationTest.java</include>
+                    </includes>
+                    <properties>
+                        <configurationParameters>
+                            junit.jupiter.tags.include=integration
+                        </configurationParameters>
+                    </properties>
+                </configuration>
+            </plugin>
+
+            <!--
+              Uwaga:
+              Nie budujemy jar-a "przed testami" w tym module.
+              Testy jednostkowe nie wymagają ładowania pluginu.
+              Testy integracyjne, które ładują plugin z jar-a, są w osobnym projekcie integration-tests/.
+            -->
+        </plugins>
+    </build>
 
 </project>
