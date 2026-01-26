@@ -99,11 +99,14 @@ class RecipeDraftTest {
         @Test
         @DisplayName("Settery działają bez błędów")
         void testSettersWork() {
-            assertDoesNotThrow(() -> {
-                draft.setName("Test");
-                draft.setPermission("test.perm");
-                draft.setId("test_id");
-            });
+            draft.setName("Test");
+            draft.setPermission("test.perm");
+            draft.setId("test_id");
+            
+            // Sprawdzamy że wartości zostały ustawione
+            assertEquals("Test", draft.getName(), "Setter name powinien ustawić wartość");
+            assertEquals("test.perm", draft.getPermission(), "Setter permission powinien ustawić wartość");
+            assertEquals("test_id", draft.getId(), "Setter id powinien ustawić wartość");
         }
     }
 

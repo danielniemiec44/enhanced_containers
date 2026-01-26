@@ -40,11 +40,9 @@ class VanillaCraftingSimulatorTest {
         @DisplayName("Powinien zaakceptować poprawny grid (rozmiar 9)")
         void shouldAcceptValidGridSize() {
             ItemStack[] grid = new ItemStack[9];
-            // Grid z samymi null'ami - powinien być obsłużony bez błędu
-            assertDoesNotThrow(
-                () -> simulator.tryMatch(null, grid),
-                "Grid o rozmiarze 9 powinien być akceptowany"
-            );
+            // Grid z samymi null'ami - powinien zwrócić null (brak receptury)
+            ItemStack result = simulator.tryMatch(null, grid);
+            assertNull(result, "Pusty grid powinien zwrócić null (brak pasującej receptury)");
         }
         
         @Test
@@ -53,12 +51,11 @@ class VanillaCraftingSimulatorTest {
             ItemStack[] grid = new ItemStack[9];
             grid[0] = new ItemStack(Material.OAK_LOG, 1);
             
-            // Nie sprawdzamy wyniku (zależy od MockBukkit),
-            // sprawdzamy że nie rzuca wyjątku
-            assertDoesNotThrow(
-                () -> simulator.tryMatch(null, grid),
-                "Grid z item'ami powinien być obsłużony bez błędu"
-            );
+            // Sprawdzamy że metoda zwraca wynik (null lub ItemStack) bez rzucania wyjątku
+            ItemStack result = simulator.tryMatch(null, grid);
+            // Wynik może być null (brak pasującej receptury) lub ItemStack (znaleziono recepturę)
+            // W testach jednostkowych bez MockBukkit server oczekujemy null
+            assertNull(result, "Bez serwera Bukkit powinien zwrócić null");
         }
         
         @Test

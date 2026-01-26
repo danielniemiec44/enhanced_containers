@@ -64,9 +64,7 @@ class NmsCraftingEngineTest {
         ItemStack[] matrix = new ItemStack[9];
         matrix[0] = new ItemStack(Material.DIRT);
 
-        assertDoesNotThrow(() -> {
-            ItemStack result = engine.getNMSCraftingResult(matrix, world);
-            assertNull(result);
-        });
+        ItemStack result = engine.getNMSCraftingResult(matrix, world);
+        assertNull(result, "NMS engine bez dostępnej klasy CraftingManager powinien zwrócić null");
     }
 }

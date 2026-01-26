@@ -36,11 +36,13 @@ class ConfigManagerTest {
         @Test
         @DisplayName("ConfigManager powinien być możliwy do zaimportowania przez reflection")
         void testConfigManagerImportable() {
-            assertDoesNotThrow(() -> {
+            try {
                 Class<?> clazz = Class.forName("pl.com.sofitfy.enhanced_containers.config.ConfigManager");
-                assertNotNull(clazz,
-                    "ConfigManager powinna być zaimportowalna przez Class.forName()");
-            }, "Importowanie ConfigManager nie powinno wyrzucić wyjątku");
+                assertNotNull(clazz, "ConfigManager powinna być zaimportowalna przez Class.forName()");
+                assertTrue(clazz.getDeclaredConstructors().length > 0, "ConfigManager powinien mieć przynajmniej jeden konstruktor");
+            } catch (ClassNotFoundException e) {
+                fail("ConfigManager nie został znaleziony: " + e.getMessage());
+            }
         }
     }
 
@@ -51,13 +53,10 @@ class ConfigManagerTest {
         @Test
         @DisplayName("ConfigManager powinien mieć konstruktor")
         void testConfigManagerCanBeInstantiated() {
-            // Testujemy czy można stworzyć instancję
-            // (w testach z null plugin, ale struktura powinna być poprawna)
-            assertDoesNotThrow(() -> {
-                // W normalnym uruchomieniu by było: new ConfigManager(plugin)
-                // W testach sprawdzamy że klasa ma prawidłową strukturę
-                assertNotNull(ConfigManager.class);
-            }, "ConfigManager powinien mieć możliwość instancjacji");
+            // Testujemy czy klasa ma konstruktor (w normalnym użyciu: new ConfigManager(plugin))
+            assertNotNull(ConfigManager.class, "ConfigManager klasa powinna istnieć");
+            assertTrue(ConfigManager.class.getDeclaredConstructors().length > 0, 
+                "ConfigManager powinien mieć przynajmniej jeden konstruktor");
         }
     }
 }

@@ -42,7 +42,6 @@ class MainPluginLifecycleIT extends MockBukkitPluginTestBase {
 
         // To: komenda istnieje i ma executor
         assertTrue(plugin instanceof Main, "W tym projekcie main class to pl.com.sofitfy.enhanced_containers.Main");
-
         PluginCommand mainCmd = ((Main) plugin).getCommand("4x4");
         assertNotNull(mainCmd, "Komenda 4x4 powinna istnieć (plugin.yml)");
         assertNotNull(mainCmd.getExecutor(), "Komenda 4x4 powinna mieć ustawiony executor");

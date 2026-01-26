@@ -63,19 +63,23 @@ class RecipeMatcherTest {
         @Test
         @DisplayName("removeItemsFromPattern nie wyrzuca błędu dla null")
         void testRemoveHandlesNull() {
-            assertDoesNotThrow(() -> {
-                RecipeMatcher.removeItemsFromPattern(null, (ItemStack[][]) null);
-            }, "removeItemsFromPattern powinna obsługiwać null");
+            // removeItemsFromPattern modyfikuje przekazaną tablicę (void method)
+            // Sprawdzamy że metoda po prostu się nie wywali na null parametrach
+            assertDoesNotThrow(() -> RecipeMatcher.removeItemsFromPattern(null, (ItemStack[][]) null),
+                "removeItemsFromPattern powinien obsłużyć null bez błędu");
         }
 
         @Test
-        @DisplayName("Metody statyczne są dostępne")
+        @DisplayName("Metody statyczne są dostępne i zwracają wartości")
         void testStaticMethodsAccessible() {
-            assertDoesNotThrow(() -> {
-                // Po prostu sprawdzamy że metody się kompilują i są dostępne
-                RecipeMatcher.matchesPatternRaw(new ItemStack[16], new ItemStack[0][]);
-                RecipeMatcher.removeItemsFromPattern(new ItemStack[16], new ItemStack[0][]);
-            }, "Metody statyczne powinny być dostępne");
+            // Sprawdzamy że metody statyczne działają i zwracają sensowne wyniki
+            boolean matches = RecipeMatcher.matchesPatternRaw(new ItemStack[16], new ItemStack[0][]);
+            assertFalse(matches, "Pusty pattern nie powinien pasować do gridu");
+            
+            // removeItemsFromPattern modyfikuje grid (efekt uboczny) - sprawdzamy że się nie wywala
+            ItemStack[] grid = new ItemStack[16];
+            assertDoesNotThrow(() -> RecipeMatcher.removeItemsFromPattern(grid, new ItemStack[0][]),
+                "removeItemsFromPattern powinien obsłużyć pusty pattern bez błędu");
         }
     }
 
@@ -87,7 +91,8 @@ class RecipeMatcherTest {
         @DisplayName("Obsługuje receptury 1x1")
         void testSmallPattern() {
             ItemStack[][] pattern = {{null}};
-            assertDoesNotThrow(() -> RecipeMatcher.matchesPatternRaw(grid, pattern));
+            boolean matches = RecipeMatcher.matchesPatternRaw(grid, pattern);
+            assertFalse(matches, "Pusty pattern 1x1 nie powinien pasować do pustego gridu (bez itemów)");
         }
 
         @Test
@@ -98,7 +103,8 @@ class RecipeMatcherTest {
                 {null, null, null},
                 {null, null, null}
             };
-            assertDoesNotThrow(() -> RecipeMatcher.matchesPatternRaw(grid, pattern));
+            boolean matches = RecipeMatcher.matchesPatternRaw(grid, pattern);
+            assertFalse(matches, "Pusty pattern 3x3 nie powinien pasować do pustego gridu (bez itemów)");
         }
 
         @Test
@@ -110,7 +116,8 @@ class RecipeMatcherTest {
                 {null, null, null, null},
                 {null, null, null, null}
             };
-            assertDoesNotThrow(() -> RecipeMatcher.matchesPatternRaw(grid, pattern));
+            boolean matches = RecipeMatcher.matchesPatternRaw(grid, pattern);
+            assertFalse(matches, "Pusty pattern 4x4 nie powinien pasować do pustego gridu (bez itemów)");
         }
     }
 

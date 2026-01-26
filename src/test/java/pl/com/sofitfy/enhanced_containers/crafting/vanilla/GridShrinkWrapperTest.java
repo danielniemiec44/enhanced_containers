@@ -30,9 +30,13 @@ public class GridShrinkWrapperTest {
         @Test
         @DisplayName("getShrunkDimensions metoda istnieje")
         void getShrunkDimensionsMethodExists() {
-            assertDoesNotThrow(() -> {
-                GridShrinkWrapper.class.getMethod("getShrunkDimensions", ItemStack[].class);
-            }, "getShrunkDimensions metoda powinna istnieć");
+            try {
+                java.lang.reflect.Method method = GridShrinkWrapper.class.getMethod("getShrunkDimensions", ItemStack[].class);
+                assertNotNull(method, "getShrunkDimensions metoda powinna istnieć");
+                assertEquals(int[].class, method.getReturnType(), "Metoda powinna zwracać int[]");
+            } catch (NoSuchMethodException e) {
+                fail("getShrunkDimensions metoda nie została znaleziona: " + e.getMessage());
+            }
         }
 
         @Test
