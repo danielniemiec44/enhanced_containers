@@ -9,7 +9,7 @@ crafting:
   gui:
     # Tytuł okienka craftingu - możesz zmienić na dowolny tekst
     # Obsługuje kody kolorów (§6 = złoty, §a = zielony itd)
-    title: "§6✨ Crafting Station"
+    title: "Crafting table"
 
     # ⚠️  Rozmiar inventoria: ZAWSZE 54 sloty (9 kolumn × 6 rzędów)
     # Zdefiniowany w Main.java - NIE BĘDZIE LICZONY Z TEGO PLIKU!
@@ -39,4 +39,5 @@ crafting:
   recipes: []
   # Receptury dodaj poprzez /4x4 new w grze! (alias: /ecraft)
   # Admin będzie tworzyć receptury edytorem i zapisywać do tego config'u automatycznie
+
 

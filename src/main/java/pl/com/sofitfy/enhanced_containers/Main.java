@@ -83,7 +83,7 @@ public class Main extends JavaPlugin {
             getServer().getPluginManager().registerEvents(editorListener, this);
 
             // Słuchamy zdarzeń selektora receptur - kiedy admin wybiera recepturę do edycji
-            RecipeSelectionListener selectionListener = new RecipeSelectionListener(editorListener);
+            RecipeSelectionListener selectionListener = new RecipeSelectionListener(editorListener, configManager);
 
             // Rejestrujemy listener selectora
             getServer().getPluginManager().registerEvents(selectionListener, this);

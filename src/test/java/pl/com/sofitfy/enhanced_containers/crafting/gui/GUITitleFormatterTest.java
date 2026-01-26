@@ -28,6 +28,17 @@ public class GUITitleFormatterTest {
         return "§r§f§l" + "\uF808".repeat(cursorBackCount) + "\uE001";
     }
 
+    private static String expectedTitleWithTextureAndVanillaTitle(int cursorBackBeforeTextureCount, int cursorBackAfterTextureCount, String vanillaTitle) {
+        // Ważne: po teksturze cofamy kursor, potem robimy reset, żeby tytuł wyglądał normalnie (vanilla),
+        // a nie był wymuszony na biało/pogrubiony.
+        return "§r§f§l"
+            + "\uF808".repeat(cursorBackBeforeTextureCount)
+            + "\uE001"
+            + "\uF808".repeat(cursorBackAfterTextureCount)
+            + "§r"
+            + vanillaTitle;
+    }
+
     @Nested
     @DisplayName("Generowanie tytułu craftingu")
     class CraftingTitleTests {
@@ -96,6 +107,34 @@ public class GUITitleFormatterTest {
             String expectedFormat = expectedTitleWithCursorBackCount(GUITitleFormatter.CURSOR_BACK_COUNT);
             assertEquals(expectedFormat, title,
                 "Tytuł craftingu powinien mieć format: §r (reset) + §f§l (biały+pogrubienie) + " + GUITitleFormatter.CURSOR_BACK_COUNT + "x\\uF808 + \\uE001");
+        }
+
+        @Test
+        @DisplayName("Tytuł craftingu z configu powinien być doklejony po teksturze i zresetowany")
+        void testCraftingTitleWithVanillaTextStructure() {
+            // Dado: przykładowy tytuł z configu (jak normalna skrzynka)
+            String vanillaTitle = "§6✨ Crafting Station";
+
+            // Kiedy: buduję tytuł z teksturą i normalnym tekstem
+            String title = GUITitleFormatter.withTextureAndVanillaTitle(vanillaTitle);
+
+            // To: powinien mieć format: §r§f§l + N x\uF808 + \uE001 + §r + (tytuł z configu)
+            String expected = expectedTitleWithTextureAndVanillaTitle(
+                GUITitleFormatter.CURSOR_BACK_COUNT,
+                GUITitleFormatter.CURSOR_BACK_AFTER_TEXTURE_COUNT,
+                vanillaTitle
+            );
+            assertEquals(expected, title,
+                "Tytuł powinien zawierać teksturę, potem reset (§r) i dopiero tytuł z configu");
+
+            // Dodatkowo: upewniamy się że cofnięcie po teksturze jest duże.
+            // To jest kluczowe, bo u użytkownika tekst był "przyklejony" do obrazka.
+            int totalCursorBackCount = countChar(title, '\uF808');
+            assertEquals(
+                GUITitleFormatter.CURSOR_BACK_COUNT + GUITitleFormatter.CURSOR_BACK_AFTER_TEXTURE_COUNT,
+                totalCursorBackCount,
+                "Tytuł powinien mieć cofnięcie przed i po teksturze"
+            );
         }
     }
 

@@ -53,6 +53,14 @@ public class RecipeSelectionGUI {
      * @param page numer strony (zaczynam od 1)
      */
     public RecipeSelectionGUI(Player player, int page) {
+        this(player, page, GUITitleFormatter.getRecipeSelectionTitle());
+    }
+
+    /**
+     * Konstruktor z tytułem podanym z zewnątrz.
+     * Dzięki temu /4x4 edit może używać tego samego stylu tytułu co /4x4 (tekstura + normalny tytuł).
+     */
+    public RecipeSelectionGUI(Player player, int page, String title) {
         this.player = player;
         
         // Oblicz liczbę stron
@@ -63,9 +71,9 @@ public class RecipeSelectionGUI {
         // Sprawdź czy strona jest prawidłowa
         this.currentPage = Math.max(1, Math.min(page, Math.max(1, totalPages)));
         
-        // Stwórz inventory z normalnym tytułem (bez custom czcionki - to miejsce do wyboru, nie do symulacji crafcingu)
-        String selectionTitle = GUITitleFormatter.getRecipeSelectionTitle();
-        this.inventory = Bukkit.createInventory(null, INVENTORY_SIZE, selectionTitle);
+        // Stwórz inventory z tytułem (może zawierać custom font / spacing glyphy)
+        String safeTitle = (title == null) ? "" : title;
+        this.inventory = Bukkit.createInventory(null, INVENTORY_SIZE, safeTitle);
         
         // Załaduj receptury na tę stronę
         setupPage();

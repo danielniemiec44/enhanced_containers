@@ -133,10 +133,11 @@ public class CraftCommand implements CommandExecutor {
             return true;
         }
 
-        // Stwórz nowe GUI dla gracza z Custom Font teksturą w tytule
-        // Tytuł będzie zawierać \uE001 które wyświetli ex_crafting.png z resource packa
-        // GUI ZAWSZE ma 54 sloty (9x6), bez możliwości zmiany!
-        String guiTitle = GUITitleFormatter.getCraftingTitle();
+        // Stwórz nowe GUI dla gracza z Custom Font teksturą w tytule,
+        // ale z normalnym tekstem tytułu dokładnie takim jak w configu.
+        // Dzięki temu wygląda jak zwykłe okno (np. skrzynka) z taką nazwą,
+        // a tekstura jest tylko "dodatkiem".
+        String guiTitle = GUITitleFormatter.withTextureAndVanillaTitle(craftingConfig.title());
         CraftingGUI gui = new CraftingGUI(player, guiTitle);
         if (gui == null) {
             player.sendMessage(Main.PLUGIN_PREFIX + "§cError: Can't create GUI!");
@@ -182,8 +183,10 @@ public class CraftCommand implements CommandExecutor {
         // Stwórz draft nowej receptury
         RecipeDraft draft = new RecipeDraft(newRecipeId);
 
-        // Stwórz GUI edytora
-        RecipeEditorGUI editor = new RecipeEditorGUI(player, draft);
+        // Stwórz GUI edytora (z takim samym podejściem do tytułu jak w /4x4)
+        RecipeEditorGUI editor = (editorListener != null)
+            ? editorListener.createEditor(player, draft)
+            : new RecipeEditorGUI(player, draft);
 
         // Zarejestruj edytor w listenera (żeby wiedział że edytor jest otwarty)
         if (editorListener != null) {
@@ -228,8 +231,10 @@ public class CraftCommand implements CommandExecutor {
             }
         }
 
-        // Stwórz selektor receptur
-        RecipeSelectionGUI selector = new RecipeSelectionGUI(player, page);
+        // Stwórz selektor receptur (tytuł ma mieć teksturę + normalny tytuł)
+        RecipeSelectionGUI selector = (selectionListener != null)
+            ? selectionListener.createSelector(player, page)
+            : new RecipeSelectionGUI(player, page);
 
         // Zarejestruj selektor w listenera
         if (selectionListener != null) {

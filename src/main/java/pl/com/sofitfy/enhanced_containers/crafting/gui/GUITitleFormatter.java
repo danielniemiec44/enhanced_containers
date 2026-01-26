@@ -11,9 +11,14 @@ public class GUITitleFormatter {
     // Przydatne do wycentrowania tekstury w tytule okna
     private static final String CURSOR_BACK = "\uF808";
 
-    // Ile razy powtarzamy cofnięcie kursora dla wycentrowania
-    // Uwaga: ta wartość zależy od metryk fontu (np. advance w RP)
+    // Ile razy powtarzamy cofnięcie kursora PRZED teksturą.
+    // Uwaga: ta wartość zależy od metryk fontu w resource packu.
     static final int CURSOR_BACK_COUNT = 9;
+
+    // Ile razy cofamy kursor PO teksturze, zanim wypiszemy normalny tytuł.
+    // To jest celowo stałe (bez configu), bo ma zależeć wyłącznie od resource packa.
+    // Uwaga praktyczna: to jest liczba ZNAKÓW, więc duża wartość = długi tytuł.
+    public static final int CURSOR_BACK_AFTER_TEXTURE_COUNT = 169;
 
     // Znak Custom Font dla tekstury ex_crafting.png
     // Zdefiniowany w default.json jako:
@@ -37,6 +42,41 @@ public class GUITitleFormatter {
     private static final String RESET_FORMAT = "§r";
 
     /**
+    * Buduje tytuł okna tak, żeby:
+     * 1) najpierw wyrenderować teksturę (custom font),
+     * 2) a potem wyświetlić normalny tytuł (np. z configu) w "vanilla" stylu.
+     *
+     * Dlaczego tak?
+     * - W samym tytule inventoria nie mamy prawdziwego "przesuwania w pionie".
+     * - Możemy natomiast sterować X poprzez znaki o ujemnym advance (tu: \uF808 z RP).
+     * - Kluczowe jest, żeby po części "§f§l + tekstura" zrobić reset formatowania,
+     *   bo inaczej tytuł z configu byłby wymuszony na biało/pogrubiony.
+     *
+     * @param vanillaTitle tytuł jaki ma być widoczny normalnie (np. z configu)
+     * @param cursorBackAfterTextureCount ile razy cofnąć kursor po teksturze
+     * @return string tytułu: tekstura + cofnięcie + reset + tytuł
+     */
+    public static String withTextureAndVanillaTitle(String vanillaTitle, int cursorBackAfterTextureCount) {
+        String safeTitle = (vanillaTitle == null) ? "" : vanillaTitle;
+        int safeBack = Math.max(0, cursorBackAfterTextureCount);
+        return RESET_FORMAT
+            + WHITE_COLOR
+            + BOLD_FORMAT
+            + CURSOR_BACK.repeat(CURSOR_BACK_COUNT)
+            + CUSTOM_FONT_CHAR
+            + CURSOR_BACK.repeat(safeBack)
+            + RESET_FORMAT
+            + safeTitle;
+    }
+
+    /**
+     * Wersja wygodna: używa domyślnej liczby cofnięć po teksturze.
+     */
+    public static String withTextureAndVanillaTitle(String vanillaTitle) {
+        return withTextureAndVanillaTitle(vanillaTitle, CURSOR_BACK_AFTER_TEXTURE_COUNT);
+    }
+
+    /**
      * Stwórz tytuł okna craftingu z Custom Font teksturą
      *
         * Zwraca: §r§f§l\uF808 x9 + \uE001
@@ -44,7 +84,7 @@ public class GUITitleFormatter {
      * - §r to reset formatowania (wyczyści domyślne kodowanie GUI Minecrafta)
      * - §f to biały kolor (wymusza jasny kolor po resetowaniu)
      * - §l to pogrubienie (przebija przez drop shadow i overlay)
-        * - \uF808 to cofnięcie kursora o 8 pikseli (powtórzone 9 razy)
+        * - \uF808 to cofnięcie kursora w lewo (u Ciebie advance = -2 px, powtórzone 9 razy)
      * - \uE001 to Custom Font Character wyświetlający ex_crafting.png
      *
      * Efekt: tekstura ex_crafting.png jest wyświetlana jasno bez przyciemniania

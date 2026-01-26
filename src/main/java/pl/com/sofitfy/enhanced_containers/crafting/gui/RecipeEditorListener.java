@@ -47,6 +47,20 @@ public class RecipeEditorListener implements Listener {
     }
 
     /**
+     * Fabryka edytora - pozwala zachować spójny tytuł (tekstura + normalny tytuł z configu)
+     * dla /4x4 new oraz /4x4 edit.
+     */
+    public RecipeEditorGUI createEditor(Player player, RecipeDraft draft) {
+        if (configManager != null) {
+            String title = GUITitleFormatter.withTextureAndVanillaTitle(configManager.getRecipeEditorTitle());
+            return new RecipeEditorGUI(player, draft, title);
+        }
+
+        // Fallback: stary tytuł z formattera (może być sama tekstura)
+        return new RecipeEditorGUI(player, draft);
+    }
+
+    /**
      * Zarejestruj edytor dla gracza (żeby wiedzieć że edytuje)
      */
     public void registerEditor(RecipeEditorGUI editor) {
@@ -140,7 +154,7 @@ public class RecipeEditorListener implements Listener {
             
             // Ponownie otwórz edytor
             Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
-                RecipeEditorGUI newEditor = new RecipeEditorGUI(player, editor.getDraft());
+                RecipeEditorGUI newEditor = createEditor(player, editor.getDraft());
                 restoreGUIState(newEditor);
                 registerEditor(newEditor);
                 newEditor.open();
@@ -168,7 +182,7 @@ public class RecipeEditorListener implements Listener {
 
             // Otwórz edytor znowu - gracz ma szansę poprawić
             Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
-                RecipeEditorGUI newEditor = new RecipeEditorGUI(player, editor.getDraft());
+                RecipeEditorGUI newEditor = createEditor(player, editor.getDraft());
                 restoreGUIState(newEditor);
                 registerEditor(newEditor);
                 newEditor.open();
@@ -190,7 +204,7 @@ public class RecipeEditorListener implements Listener {
 
             // Otwórz edytor znowu
             Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
-                RecipeEditorGUI newEditor = new RecipeEditorGUI(player, editor.getDraft());
+                RecipeEditorGUI newEditor = createEditor(player, editor.getDraft());
                 restoreGUIState(newEditor);
                 registerEditor(newEditor);
                 newEditor.open();

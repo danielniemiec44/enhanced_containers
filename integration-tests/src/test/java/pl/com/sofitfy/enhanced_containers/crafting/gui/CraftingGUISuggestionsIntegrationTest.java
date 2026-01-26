@@ -65,7 +65,7 @@ class CraftingGUISuggestionsIntegrationTest extends MockBukkitPluginTestBase {
     }
 
     @Test
-    @DisplayName("Kliknięcie w slot podpowiedzi jest anulowane (read-only)")
+    @DisplayName("Kliknięcie w slot podpowiedzi jest anulowane (nie da się zabrać ikonki)")
     void clickingSuggestionSlotIsCancelled() {
         PlayerMock player = createPlayer();
         player.setOp(true);
@@ -113,9 +113,12 @@ class CraftingGUISuggestionsIntegrationTest extends MockBukkitPluginTestBase {
         assertTrue(click.isCancelled(), "Slot podpowiedzi powinien być read-only");
         assertEquals(Material.COBBLESTONE, player.getItemOnCursor().getType(), "Kursor nie powinien się zmienić");
 
-        ItemStack stillThere = gui.getInventory().getItem(suggestionSlot);
-        assertNotNull(stillThere, "Ikonka podpowiedzi powinna zostać");
-        assertEquals(Material.DIAMOND_BLOCK, stillThere.getType(), "Ikonka podpowiedzi powinna zostać");
+        // Kliknięcie w podpowiedź uruchamia auto-układanie receptury.
+        // Po tym podpowiedzi mogą się zmienić (np. zniknąć, bo itemy poszły do gridu).
+        // Najważniejsze dla tego testu: nie da się "zabrać" ikonki do kursora.
+        ItemStack output = gui.getInventory().getItem(CraftingGUI.OUTPUT_SLOT);
+        assertNotNull(output, "Po auto-układaniu powinien pojawić się wynik craftingu");
+        assertEquals(Material.DIAMOND_BLOCK, output.getType(), "Wynik craftingu powinien być DIAMOND_BLOCK");
     }
 
     @Test

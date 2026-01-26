@@ -1,6 +1,7 @@
 package pl.com.sofitfy.enhanced_containers.crafting.gui;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -64,7 +65,10 @@ public class CraftingGUI {
 
     private void createInventory() {
         // Tworzy inventory bez deprecated metody
-        inventory = Bukkit.createInventory(null, size, Component.text(title));
+        // Uwaga: tytuły w configu używają kodów §. Jeśli zrobimy Component.text(...),
+        // to klient zobaczy dosłownie znak '§'. Dlatego deserialize legacy.
+        Component titleComponent = LegacyComponentSerializer.legacySection().deserialize(title);
+        inventory = Bukkit.createInventory(null, size, titleComponent);
         setupLayout();
     }
 

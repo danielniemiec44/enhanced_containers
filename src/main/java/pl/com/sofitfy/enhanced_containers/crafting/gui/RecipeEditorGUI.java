@@ -1,6 +1,7 @@
 package pl.com.sofitfy.enhanced_containers.crafting.gui;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -58,17 +59,22 @@ public class RecipeEditorGUI {
      * Konstruktor - stwórz edytor dla nowej receptury
      */
     public RecipeEditorGUI(Player player, RecipeDraft draft) {
+        this(player, draft, GUITitleFormatter.getEditorTitle());
+    }
+
+    /**
+     * Konstruktor - stwórz edytor z tytułem podanym z zewnątrz.
+     *
+     * Dzięki temu możemy kontrolować tytuł przez config (i dopasować X do resource packa).
+     */
+    public RecipeEditorGUI(Player player, RecipeDraft draft, String title) {
         this.player = player;
         this.draft = draft;
 
         // Stwórz inventory 54 sloty (6 rzędów × 9 kolumn)
         // Tytuł będzie zawierać \uE001 które wyświetli ex_crafting.png z resource packa
-        String editorTitle = GUITitleFormatter.getEditorTitle();
-        this.inventory = Bukkit.createInventory(
-            null,
-            54,
-            Component.text(editorTitle)
-        );
+        Component titleComponent = LegacyComponentSerializer.legacySection().deserialize(title);
+        this.inventory = Bukkit.createInventory(null, 54, titleComponent);
 
         // Załaduj dane z draftu do GUI
         loadDraftToGUI();

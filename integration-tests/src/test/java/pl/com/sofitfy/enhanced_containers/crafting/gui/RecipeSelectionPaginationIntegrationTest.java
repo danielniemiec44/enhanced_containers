@@ -50,7 +50,7 @@ class RecipeSelectionPaginationIntegrationTest extends MockBukkitTestBase {
 
         Player player = createPlayer();
         RecipeEditorListener editorListener = mock(RecipeEditorListener.class);
-        RecipeSelectionListener selectionListener = new RecipeSelectionListener(editorListener);
+        RecipeSelectionListener selectionListener = new RecipeSelectionListener(editorListener, null);
 
         // Otwieramy stronę 1
         RecipeSelectionGUI page1 = new RecipeSelectionGUI(player, 1);

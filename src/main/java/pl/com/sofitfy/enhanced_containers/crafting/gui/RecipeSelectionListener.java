@@ -6,7 +6,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import pl.com.sofitfy.enhanced_containers.Main;
-import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeSelectionGUI;
+import pl.com.sofitfy.enhanced_containers.config.ConfigManager;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.CraftingRecipe;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeDraft;
 
@@ -31,13 +31,28 @@ public class RecipeSelectionListener implements Listener {
     // Referencja do listenera edytora aby zarejestrować edytor
     private final RecipeEditorListener editorListener;
 
+    private final ConfigManager configManager;
+
     /**
      * Konstruktor
      *
      * @param editorListener listener edytora receptur (do rejestracji nowego edytora)
      */
-    public RecipeSelectionListener(RecipeEditorListener editorListener) {
+    public RecipeSelectionListener(RecipeEditorListener editorListener, ConfigManager configManager) {
         this.editorListener = editorListener;
+        this.configManager = configManager;
+    }
+
+    /**
+     * Fabryka selectora - pozwala zachować spójny tytuł dla /4x4 edit.
+     */
+    public RecipeSelectionGUI createSelector(Player player, int page) {
+        if (configManager != null) {
+            String title = GUITitleFormatter.withTextureAndVanillaTitle(configManager.getRecipeSelectionTitle());
+            return new RecipeSelectionGUI(player, page, title);
+        }
+
+        return new RecipeSelectionGUI(player, page);
     }
 
     /**
@@ -115,7 +130,9 @@ public class RecipeSelectionListener implements Listener {
         draft.setOutput(recipe.getOutput());
 
         // Stwórz GUI edytora
-        RecipeEditorGUI editor = new RecipeEditorGUI(player, draft);
+        RecipeEditorGUI editor = (editorListener != null)
+            ? editorListener.createEditor(player, draft)
+            : new RecipeEditorGUI(player, draft);
 
         // Zarejestruj edytor w listenera
         if (editorListener != null) {
@@ -141,11 +158,11 @@ public class RecipeSelectionListener implements Listener {
 
         // Kliknięcie na poprzednią stronę
         if (selector.isPrevPageButton(slot)) {
-            newSelector = new RecipeSelectionGUI(player, selector.getCurrentPage() - 1);
+            newSelector = createSelector(player, selector.getCurrentPage() - 1);
         }
         // Kliknięcie na następną stronę
         else if (selector.isNextPageButton(slot)) {
-            newSelector = new RecipeSelectionGUI(player, selector.getCurrentPage() + 1);
+            newSelector = createSelector(player, selector.getCurrentPage() + 1);
         }
 
         if (newSelector != null) {

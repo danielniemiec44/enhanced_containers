@@ -47,7 +47,8 @@ class VanillaShapelessAnywhereIn4x4IntegrationTest extends MockBukkitPluginTestB
         ItemStack output = gui.getInventory().getItem(CraftingGUI.OUTPUT_SLOT);
         assertNotNull(output, "Output powinien się pojawić dla shapeless nawet przy rozrzuceniu w 4x4");
         assertEquals(Material.FIREWORK_ROCKET, output.getType(), "Wynik powinien być FIREWORK_ROCKET");
-        assertEquals(1, output.getAmount(), "W MockBukkit testowej recepturze wynik ma amount=1");
+        // W vanilla PAPER + GUNPOWDER daje 3 sztuki FIREWORK_ROCKET.
+        assertEquals(3, output.getAmount(), "Wynik powinien mieć amount=3 (vanilla)");
     }
 
     @Test
