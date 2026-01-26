@@ -16,6 +16,12 @@
         <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
         <mockbukkit.version>4.101.0</mockbukkit.version>
         <junit.version>5.10.2</junit.version>
+
+                <!--
+                    Opt-in: ciężkie testy uruchamiające prawdziwy serwer Paper.
+                    Domyślnie: false (żeby nie spowalniać codziennego cyklu pracy).
+                -->
+                <realPaperIT>false</realPaperIT>
     </properties>
 
     <dependencyManagement>
@@ -143,6 +149,10 @@
                 <configuration>
                     <useModulePath>false</useModulePath>
                     <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                    <systemPropertyVariables>
+                        <!-- przekazujemy flagę do JVM testów (failsafe zwykle forkuje JVM) -->
+                        <realPaperIT>${realPaperIT}</realPaperIT>
+                    </systemPropertyVariables>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>

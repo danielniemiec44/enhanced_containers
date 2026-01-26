@@ -190,6 +190,13 @@ class ShiftClickPerformanceTest {
         // Przy bardzo małych czasach szum i JIT powodują duże odchylenia
         // Dlatego używamy dużej tolerancji (0.1 do 20x) - głównie sprawdzamy że nie jest wykładnicze
         for (int i = 1; i < craftCounts.length; i++) {
+            // Jeśli czas bazowy jest ekstremalnie mały, ratio potrafi wyjść absurdalne (szum/JIT,
+            // przeplot z innymi testami, itp.). W takim przypadku ten fragment testu nie ma sensu
+            // i potrafi dawać fałszywe alarmy.
+            if (times[i - 1] < 100_000) { // <0.1ms
+                continue;
+            }
+
             double ratioExpected = (double) craftCounts[i] / craftCounts[i-1];
             double ratioActual = (double) times[i] / times[i-1];
             

@@ -233,18 +233,21 @@ public class CraftingGUIListener implements Listener {
             // ========== OPERACJA 2: NORMALNY CLICK - ZABRANIE ITEMU ==========
             ClickType clickType = event.getClick();
             if (clickType == ClickType.LEFT || clickType == ClickType.RIGHT) {
-                // ⚠️ KRYTYCZNE: Gracz MUSI mieć pusty kursor aby zabrać output!
-                // Jeśli ma item w kursorze - to próba exploitu (swap)!
+                // Ważne: w vanilla workbench można klikać wynik wielokrotnie.
+                // Jeśli na kursorze jest TEN SAM item, to dokładamy wynik do stacka.
+                // Jeśli na kursorze jest inny item, to traktujemy to jak próbę swapu i blokujemy.
+
                 ItemStack cursor = event.getCursor();
                 if (cursor != null && !cursor.getType().isAir()) {
-                    // Gracz ma item w kursorze - BLOKUJEMY (już anulowaliśmy event)
-                    // Nie robimy nic więcej - gracz nie może zastąpić outputu
-                    return;
+                    int takeAmount = output.getAmount();
+                    if (!canAddToCursor(cursor, output, takeAmount)) {
+                        return;
+                    }
                 }
-                
-                // ✅ Kursor pusty - RĘCZNIE dajemy graczowi output na kursor
+
+                // RĘCZNIE dajemy graczowi output na kursor (lub dokładamy do stacka)
                 // i usuwamy składniki z gridu
-                handleNormalClickOutput(player, gui, output, clickType);
+                handleNormalClickOutput(event, player, gui, output, clickType, cursor);
                 return;
             }
 
@@ -432,13 +435,28 @@ public class CraftingGUIListener implements Listener {
      * @param output Item który jest w output slocie (NIE może być null/air!)
      * @param clickType Typ kliknięcia (LEFT/RIGHT)
      */
-    private void handleNormalClickOutput(Player player, CraftingGUI gui, ItemStack output, ClickType clickType) {
+    private void handleNormalClickOutput(InventoryClickEvent event, Player player, CraftingGUI gui, ItemStack output, ClickType clickType, ItemStack cursorFromEvent) {
         if (player == null || gui == null || output == null || output.getType().isAir()) {
             return;
         }
 
         RecipeManager manager = RecipeManager.getInstance();
         if (manager == null) {
+            return;
+        }
+
+        // Ustal ile itemów chcemy dać na kursor w tym jednym craftcie.
+        // Dla spójności: zarówno LEFT jak i RIGHT zabierają cały wynik receptury.
+        int takeAmount = output.getAmount();
+        if (takeAmount <= 0) {
+            return;
+        }
+
+        // Najpierw sprawdzamy czy na kursorze da się bezpiecznie dołożyć wynik.
+        // To jest kluczowe, żeby nie robić "połowicznych" craftów.
+        ItemStack currentCursor = (cursorFromEvent != null) ? cursorFromEvent : player.getItemOnCursor();
+        ItemStack newCursor = buildNewCursorAfterTaking(currentCursor, output, takeAmount);
+        if (newCursor == null) {
             return;
         }
 
@@ -463,11 +481,20 @@ public class CraftingGUIListener implements Listener {
 
             // Znaleźliśmy recepturę! RĘCZNIE obsługujemy pickup:
             
-            // 1. Daj graczowi output na kursor
-            player.setItemOnCursor(output.clone());
+            // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
+            // Uwaga: w anulowanych eventach bezpieczniej ustawić to przez event (lepsza synchronizacja klienta).
+            if (event != null) {
+                event.setCursor(newCursor);
+            }
+            player.setItemOnCursor(newCursor);
             
             // 2. Wyczyść output slot
             gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+            if (event != null) {
+                // Bukkit potrafi przywrócić kliknięty slot z wartości event.getCurrentItem().
+                // Ustawiamy null, żeby nie było desync (zwłaszcza przy wielokrotnym klikaniu).
+                event.setCurrentItem(null);
+            }
             
             // 3. Usuń składniki z gridu
             RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
@@ -475,6 +502,9 @@ public class CraftingGUIListener implements Listener {
             
             // 4. Zaktualizuj output dla następnego craftu
             updateOutput(player, gui);
+
+            // 5. Dla pewności: odśwież klienta (w anulowanych eventach potrafi się rozjechać UI)
+            runNextTickIfPossible(player::updateInventory);
             
             return;
         }
@@ -498,11 +528,17 @@ public class CraftingGUIListener implements Listener {
 
                 // Znaleźliśmy vanilla shaped recepturę! RĘCZNIE obsługujemy pickup:
                 
-                // 1. Daj graczowi output na kursor
-                player.setItemOnCursor(output.clone());
+                // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
+                if (event != null) {
+                    event.setCursor(newCursor);
+                }
+                player.setItemOnCursor(newCursor);
                 
                 // 2. Wyczyść output slot
                 gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+                if (event != null) {
+                    event.setCurrentItem(null);
+                }
                 
                 // 3. Usuń składniki z gridu
                 RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
@@ -510,6 +546,9 @@ public class CraftingGUIListener implements Listener {
                 
                 // 4. Zaktualizuj output dla następnego craftu
                 updateOutput(player, gui);
+
+                // 5. Sync UI
+                runNextTickIfPossible(player::updateInventory);
                 
                 return;
             }
@@ -526,11 +565,17 @@ public class CraftingGUIListener implements Listener {
 
                 // Znaleźliśmy vanilla shapeless recepturę! RĘCZNIE obsługujemy pickup:
                 
-                // 1. Daj graczowi output na kursor
-                player.setItemOnCursor(output.clone());
+                // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
+                if (event != null) {
+                    event.setCursor(newCursor);
+                }
+                player.setItemOnCursor(newCursor);
                 
                 // 2. Wyczyść output slot
                 gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+                if (event != null) {
+                    event.setCurrentItem(null);
+                }
                 
                 // 3. Usuń składniki z gridu
                 RecipeMatcher.removeShapelessItems(gridItems, ingredients);
@@ -538,6 +583,9 @@ public class CraftingGUIListener implements Listener {
                 
                 // 4. Zaktualizuj output dla następnego craftu
                 updateOutput(player, gui);
+
+                // 5. Sync UI
+                runNextTickIfPossible(player::updateInventory);
                 
                 return;
             }
@@ -546,9 +594,57 @@ public class CraftingGUIListener implements Listener {
         // Żadna receptura nie pasowała - nie powinno się zdarzyć
         // (output był tam bo receptura pasowała wcześniej)
         // Bezpieczna fallback: daj graczowi output bez usuwania składników
-        player.setItemOnCursor(output.clone());
+        if (event != null) {
+            event.setCursor(newCursor);
+        }
+        player.setItemOnCursor(newCursor);
         gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+        if (event != null) {
+            event.setCurrentItem(null);
+        }
         updateOutput(player, gui);
+        runNextTickIfPossible(player::updateInventory);
+    }
+
+    /**
+     * Sprawdza czy można dołożyć wynik craftingu do itemu na kursorze.
+     *
+     * Prosto:
+     * - jeśli item na kursorze jest "taki sam" (meta też), to można dołożyć
+     * - ale tylko jeśli nie przekroczymy max stack size
+     */
+    static boolean canAddToCursor(ItemStack cursor, ItemStack output, int addAmount) {
+        if (cursor == null || cursor.getType().isAir()) return true;
+        if (output == null || output.getType().isAir()) return false;
+        if (addAmount <= 0) return false;
+        if (!cursor.isSimilar(output)) return false;
+        int max = cursor.getMaxStackSize();
+        return cursor.getAmount() + addAmount <= max;
+    }
+
+    /**
+     * Buduje nowy stan kursora po zabraniu wyniku craftingu.
+     * Zwraca null jeśli nie da się tego zrobić (np. inny item na kursorze lub brak miejsca).
+     */
+    static ItemStack buildNewCursorAfterTaking(ItemStack cursor, ItemStack output, int takeAmount) {
+        if (output == null || output.getType().isAir() || takeAmount <= 0) {
+            return null;
+        }
+
+        ItemStack resultPiece = output.clone();
+        resultPiece.setAmount(takeAmount);
+
+        if (cursor == null || cursor.getType().isAir()) {
+            return resultPiece;
+        }
+
+        if (!canAddToCursor(cursor, output, takeAmount)) {
+            return null;
+        }
+
+        ItemStack merged = cursor.clone();
+        merged.setAmount(cursor.getAmount() + takeAmount);
+        return merged;
     }
 
     /**

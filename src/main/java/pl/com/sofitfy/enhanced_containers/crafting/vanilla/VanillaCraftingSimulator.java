@@ -14,6 +14,8 @@ import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.Color;
 
+import pl.com.sofitfy.enhanced_containers.crafting.nms.NmsCraftingEngine;
+
 import java.util.Map;
 
 /**
@@ -33,6 +35,8 @@ import java.util.Map;
  * Dla 4x4 siatek z CraftingGUIListener, używaj metody tryMatch4x4().
  */
 public class VanillaCraftingSimulator {
+
+    private final NmsCraftingEngine nmsCraftingEngine = new NmsCraftingEngine();
     
     /**
      * Symuluje vanilla crafting table dla danego 3x3 gridu.
@@ -75,15 +79,25 @@ public class VanillaCraftingSimulator {
             }
             
             // Szukaj receptury w rejestrze Bukkit'a
-            Recipe recipe = Bukkit.getCraftingRecipe(matrix, player.getWorld());
-            
+            // 1) Najpierw próbuj prawdziwy NMS crafting (Paper 1.21.11, Mojang mappings).
+            //    W testach (Maven/MockBukkit) ta ścieżka zwykle zwróci null i to jest OK.
             ItemStack baseResult = null;
-            
-            // Jeśli znalezliśmy recepturę - wyciągnij wynik
-            if (recipe != null && recipe.getResult() != null && recipe.getResult().getType() != Material.AIR) {
-                baseResult = recipe.getResult().clone();
-            } else {
-                // Fallback dla receptur specjalnych (fajerwerki, naprawy)
+            try {
+                baseResult = nmsCraftingEngine.getNMSCraftingResult(matrix, player.getWorld());
+            } catch (Throwable ignored) {
+                baseResult = null;
+            }
+
+            // 2) Jeśli NMS nie zadziałał, próbuj Bukkit API
+            if (baseResult == null || baseResult.getType() == Material.AIR) {
+                Recipe recipe = Bukkit.getCraftingRecipe(matrix, player.getWorld());
+                if (recipe != null && recipe.getResult() != null && recipe.getResult().getType() != Material.AIR) {
+                    baseResult = recipe.getResult().clone();
+                }
+            }
+
+            // 3) Ostateczny fallback dla kilku "special" receptur (głównie pod testy i kompatybilność)
+            if (baseResult == null || baseResult.getType() == Material.AIR) {
                 baseResult = tryResolveSpecialVanilla(matrix);
             }
             
@@ -177,18 +191,23 @@ public class VanillaCraftingSimulator {
                     return null;
                 }
 
-                // Bukkit API zawsze zwraca jakiś kolor (domyślny dla niezabarwionej zbroi),
-                // więc mieszamy go zawsze - daje to vanilla-like ciemniejsze odcienie.
+                // Vanilla: jeśli zbroja NIE była wcześniej farbowana, nie miesza "domyślnego" koloru skóry.
+                // Bukkit nie daje prostego hasColor(), więc robimy rozsądne przybliżenie:
+                // - jeśli kolor to dokładnie domyślny (160, 101, 64) to traktujemy jak "brak koloru".
                 Color base = lam.getColor();
-                int r = base.getRed();
-                int g = base.getGreen();
-                int b = base.getBlue();
+                boolean hasCustomColor = !(base.getRed() == 160 && base.getGreen() == 101 && base.getBlue() == 64);
 
-                sumRed += r;
-                sumGreen += g;
-                sumBlue += b;
-                sumMaxChannel += Math.max(r, Math.max(g, b));
-                colorComponents++;
+                if (hasCustomColor) {
+                    int r = base.getRed();
+                    int g = base.getGreen();
+                    int b = base.getBlue();
+
+                    sumRed += r;
+                    sumGreen += g;
+                    sumBlue += b;
+                    sumMaxChannel += Math.max(r, Math.max(g, b));
+                    colorComponents++;
+                }
 
                 continue;
             }
@@ -219,8 +238,7 @@ public class VanillaCraftingSimulator {
             return null;
         }
 
-        // Jeżeli zbroja nie miała wcześniej koloru, a były tylko barwniki,
-        // colorComponents > 0 i wszystko jest OK.
+        // Jeśli zbroja nie miała wcześniej koloru, to colorComponents pochodzi tylko z barwników.
         int avgRed = sumRed / colorComponents;
         int avgGreen = sumGreen / colorComponents;
         int avgBlue = sumBlue / colorComponents;

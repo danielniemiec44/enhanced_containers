@@ -6,6 +6,7 @@ import pl.com.sofitfy.enhanced_containers.commands.CraftCommand;
 import pl.com.sofitfy.enhanced_containers.crafting.gui.CraftingGUIListener;
 import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeEditorListener;
 import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeSelectionListener;
+import pl.com.sofitfy.enhanced_containers.crafting.nms.NmsCraftingSelfTestRunner;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeLoader;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeManager;
 
@@ -97,6 +98,10 @@ public class Main extends JavaPlugin {
             // Stwórz executor komendy i przekaż mu wszystkie listenery
             CraftCommand commandExecutor = new CraftCommand(this, configManager, guiListener, editorListener, selectionListener);
             craftCommand.setExecutor(commandExecutor);
+
+            // Self-test pod prawdziwy Paper serwer (tylko dla testów automatycznych).
+            // Włączane przez: -Dplethoras.nmsSelfTest=true
+            new NmsCraftingSelfTestRunner(this).maybeRun();
 
 
             getLogger().info(PLUGIN_PREFIX + "§aPlugin fully loaded!");
