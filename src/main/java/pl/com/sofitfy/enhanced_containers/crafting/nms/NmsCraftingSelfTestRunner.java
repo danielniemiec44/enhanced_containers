@@ -23,10 +23,13 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.FireworkEffect;
 import org.bukkit.plugin.java.JavaPlugin;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.NmsVanillaSuggestion;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.NmsVanillaSuggestionEngine;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * Self-test uruchamiany TYLKO w testach integracyjnych z prawdziwym Paper serwerem.
@@ -118,6 +121,44 @@ public final class NmsCraftingSelfTestRunner {
             sb.append("repair.ok=").append(repairOk).append("\n");
             sb.append("repair.expectedDamage=").append(expectedDamage).append("\n");
             sb.append("repair.actualDamage=").append(repairActualDamage).append("\n");
+
+            // =====================
+            // 2) NMS SUGGESTIONS TEST (VANILLA)
+            // =====================
+            // Dajemy "ekwipunek" jako tablicę ItemStacków.
+            // Chcemy sprawdzić, że NMS potrafi znaleźć craftowalny przepis,
+            // oraz że matryca z podpowiedzi daje poprawny wynik przez assemble().
+
+            NmsVanillaSuggestionEngine suggestionEngine = new NmsVanillaSuggestionEngine();
+            ItemStack[] fakeInventory = new ItemStack[] { new ItemStack(Material.OAK_LOG, 1) };
+            List<NmsVanillaSuggestion> suggestions = suggestionEngine.computeSuggestions(fakeInventory, world, 5);
+
+            boolean suggestionsOk = suggestions != null && !suggestions.isEmpty();
+            boolean planksOk = false;
+            if (suggestionsOk) {
+                for (NmsVanillaSuggestion s : suggestions) {
+                    if (s == null || s.getOutput() == null) {
+                        continue;
+                    }
+                    if (s.getOutput().getType() != Material.OAK_PLANKS) {
+                        continue;
+                    }
+
+                    ItemStack[] matrix = s.getMatrix3x3();
+                    if (matrix == null || matrix.length != 9) {
+                        continue;
+                    }
+
+                    ItemStack crafted = engine.getNMSCraftingResult(matrix, world);
+                    planksOk = crafted != null
+                        && crafted.getType() == Material.OAK_PLANKS
+                        && crafted.getAmount() == 4;
+                    break;
+                }
+            }
+
+            sb.append("suggestions.ok=").append(suggestionsOk).append("\n");
+            sb.append("suggestions.planks.ok=").append(planksOk).append("\n");
 
             if (!repairOk) ok = false;
 

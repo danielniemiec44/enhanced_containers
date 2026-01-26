@@ -2,10 +2,13 @@ package pl.com.sofitfy.enhanced_containers.crafting.gui;
 
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -42,6 +45,16 @@ public class CraftingGUI {
     // Slot na output - ZAWSZE 24!
     public static final int OUTPUT_SLOT = 24;
 
+    // Sloty na "podpowiedzi craftingu" (ostatni rząd).
+    // UWAGA: sloty liczymy 0-53. Slot 49 zostawiamy na ikonę informacji.
+    public static final int[] SUGGESTION_SLOTS = {
+        45, 46, 47, 48,
+        50, 51, 52, 53
+    };
+
+    // Ikona w środku ostatniego rzędu (np. w przyszłości pod menu/paginację)
+    public static final int SUGGESTIONS_INFO_SLOT = 49;
+
     public CraftingGUI(Player player, String title) {
         this.playerId = player.getUniqueId();
         this.title = title;
@@ -68,6 +81,72 @@ public class CraftingGUI {
         // Output slot zostaje pusty.
         // Chcemy odwzorować crafting table: wynik pojawia się tylko gdy receptura pasuje.
         inventory.setItem(OUTPUT_SLOT, null);
+
+        // Ikona "recipe hints" w środku ostatniego rzędu.
+        // Teksty w grze po angielsku.
+        ItemStack info = new ItemStack(Material.BOOK);
+        ItemMeta meta = info.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text("§6Recipe suggestions"));
+            meta.lore(List.of(Component.text("§7Shows craftable outputs")));
+            info.setItemMeta(meta);
+        }
+        inventory.setItem(SUGGESTIONS_INFO_SLOT, info);
+    }
+
+    /**
+     * Sprawdź czy slot to jeden z slotów podpowiedzi (same ikonki).
+     */
+    public boolean isSuggestionSlot(int slot) {
+        for (int s : SUGGESTION_SLOTS) {
+            if (s == slot) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Slot w środku ostatniego rzędu - informacja.
+     */
+    public boolean isSuggestionsInfoSlot(int slot) {
+        return slot == SUGGESTIONS_INFO_SLOT;
+    }
+
+    /**
+     * Wyczyść ikonki podpowiedzi.
+     */
+    public void clearSuggestions() {
+        for (int slot : SUGGESTION_SLOTS) {
+            inventory.setItem(slot, null);
+        }
+    }
+
+    /**
+     * Ustaw ikonki podpowiedzi w ostatnim rzędzie.
+     * items są tylko do wyświetlania - listener blokuje interakcje z tymi slotami.
+     */
+    public void setSuggestions(List<ItemStack> items) {
+        clearSuggestions();
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+
+        int i = 0;
+        for (int slot : SUGGESTION_SLOTS) {
+            if (i >= items.size()) {
+                break;
+            }
+            ItemStack item = items.get(i);
+            if (item == null || item.getType().isAir()) {
+                inventory.setItem(slot, null);
+            } else {
+                ItemStack icon = item.clone();
+                icon.setAmount(1); // tylko podgląd
+                inventory.setItem(slot, icon);
+            }
+            i++;
+        }
     }
 
     /**
@@ -160,7 +239,7 @@ public class CraftingGUI {
      * Pozostałe sloty (37) są ukryte za customowym fontem i niedostępne
      */
     public boolean isVisibleSlot(int slot) {
-        return isInputSlot(slot) || isOutputSlot(slot);
+        return isInputSlot(slot) || isOutputSlot(slot) || isSuggestionSlot(slot) || isSuggestionsInfoSlot(slot);
     }
 }
 

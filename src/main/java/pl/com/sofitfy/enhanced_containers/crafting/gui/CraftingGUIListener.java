@@ -19,6 +19,11 @@ import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeManager;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeMatcher;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipePattern;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.VanillaRecipe;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.RecipeSuggestionEngine;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.CraftingAutofillPlanner;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.CraftingSuggestion;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.NmsVanillaSuggestion;
+import pl.com.sofitfy.enhanced_containers.crafting.suggestions.NmsVanillaSuggestionEngine;
 import pl.com.sofitfy.enhanced_containers.crafting.vanilla.VanillaCraftingSimulator;
 
 import java.util.*;
@@ -46,6 +51,9 @@ public class CraftingGUIListener implements Listener {
     
     // Przechowuje virtual crafting simulatory dla każdego gracza
     private final Map<UUID, VanillaCraftingSimulator> vanillaSimulators = new HashMap<>();
+
+    // Przechowuje aktualne podpowiedzi dla gracza (kolejność = sloty SUGGESTION_SLOTS)
+    private final Map<UUID, List<CraftingSuggestion>> suggestionsByPlayer = new HashMap<>();
 
     private final JavaPlugin plugin;
 
@@ -188,7 +196,9 @@ public class CraftingGUIListener implements Listener {
                 return;
             }
 
-            // Pozostałe akcje w ekwipunku gracza - pozwalamy normalnie
+            // Pozostałe akcje w ekwipunku gracza - pozwalamy normalnie,
+            // ale odświeżamy podpowiedzi (bo zmienia się zawartość ekwipunku).
+            runNextTickIfPossible(() -> updateOutput(player, gui));
             return;
         }
 
@@ -196,6 +206,20 @@ public class CraftingGUIListener implements Listener {
         // Traktujemy te sloty jakby ich w ogóle nie było
         if (!gui.isVisibleSlot(slot)) {
             event.setCancelled(true);
+            return;
+        }
+
+        // Sloty podpowiedzi są tylko do wyświetlania - blokujemy wszystkie interakcje.
+        // Dzięki temu gracz nie może tam nic włożyć ani zabrać (bez exploitów).
+        if (gui.isSuggestionsInfoSlot(slot)) {
+            event.setCancelled(true);
+            return;
+        }
+
+        // Klik w podpowiedź = auto-układanie receptury.
+        if (gui.isSuggestionSlot(slot)) {
+            event.setCancelled(true);
+            handleSuggestionClick(player, gui, slot);
             return;
         }
 
@@ -267,6 +291,11 @@ public class CraftingGUIListener implements Listener {
             // (po tym jak gracz skończy operację drag/drop)
             runNextTickIfPossible(() -> updateOutput(player, gui));
         }
+
+        // Jeśli gracz klika w naszym widoku, ale na dolnym ekwipunku (wcześniej return)
+        // to i tak chcemy odświeżyć podpowiedzi gdy zmienia się ekwipunek.
+        // (Nie wchodzimy w detale akcji - po prostu update na następny tick.)
+        // Uwaga: to działa tylko dla klików, które nie weszły w wcześniejszy return.
     }
 
     // Słucha kiedy gracz robi kreatywne akcje (Creative Inventory)
@@ -311,6 +340,12 @@ public class CraftingGUIListener implements Listener {
 
         // Output slot jest TYLKO do odczytu - w creative też blokujemy!
         if (gui.isOutputSlot(slot)) {
+            event.setCancelled(true);
+            return;
+        }
+
+        // Podpowiedzi też są read-only
+        if (gui.isSuggestionSlot(slot) || gui.isSuggestionsInfoSlot(slot)) {
             event.setCancelled(true);
             return;
         }
@@ -401,6 +436,8 @@ public class CraftingGUIListener implements Listener {
             if (output != null) {
                 gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, output.clone());
             }
+            // Zawsze odśwież podpowiedzi (na podstawie ekwipunku, nie gridu)
+            updateSuggestions(player, gui);
             return; // Skończ - custom receptury mają priorytet
         }
 
@@ -411,11 +448,360 @@ public class CraftingGUIListener implements Listener {
         
         if (vanillaOutput != null) {
             gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, vanillaOutput);
+            updateSuggestions(player, gui);
             return;
         }
 
         // Żadna receptura nie pasuje - wyczyść output slot
         gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+
+        // Nawet jak output pusty, podpowiedzi mogą istnieć.
+        updateSuggestions(player, gui);
+    }
+
+    private void handleSuggestionClick(Player player, CraftingGUI gui, int rawSlot) {
+        if (player == null || gui == null) {
+            return;
+        }
+
+        int index = -1;
+        for (int i = 0; i < CraftingGUI.SUGGESTION_SLOTS.length; i++) {
+            if (CraftingGUI.SUGGESTION_SLOTS[i] == rawSlot) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) {
+            return;
+        }
+
+        List<CraftingSuggestion> suggestions = suggestionsByPlayer.get(player.getUniqueId());
+        if (suggestions == null || index >= suggestions.size()) {
+            return;
+        }
+
+        CraftingSuggestion suggestion = suggestions.get(index);
+        if (suggestion == null) {
+            return;
+        }
+
+        // 1) Czyścimy grid i oddajemy itemy do ekwipunku (jak recipe book)
+        clearGridToPlayer(player, gui);
+
+        // 2) Budujemy plan co ma trafić do gridu 4x4 (lewy górny róg)
+        ItemStack[] plan16 = buildGridPlan16ForSuggestion(player, suggestion);
+        if (plan16 == null) {
+            player.sendMessage("§cCannot fill this recipe.");
+            updateOutput(player, gui);
+            return;
+        }
+
+        // 3) Sprawdzamy czy nadal da się to zrobić (ekwipunek mógł się zmienić)
+        ItemStack[] invSnapshot = player.getInventory().getStorageContents();
+
+        // 3b) Uzupełniamy sloty "na max" i rozdzielamy równo.
+        // Dzięki temu gracz może od razu robić wiele craftów (np. shift-click wyniku).
+        Optional<ItemStack[]> maxPlanOpt = CraftingAutofillPlanner.maximizePlan16(
+            invSnapshot,
+            plan16,
+            ItemStack::isSimilar
+        );
+
+        if (maxPlanOpt.isEmpty()) {
+            player.sendMessage("§cYou don't have required items.");
+            updateOutput(player, gui);
+            return;
+        }
+
+        ItemStack[] maxPlan16 = maxPlanOpt.get();
+
+        Optional<CraftingAutofillPlanner.AutofillPlan> plan = CraftingAutofillPlanner.plan(
+            invSnapshot,
+            maxPlan16,
+            ItemStack::isSimilar
+        );
+
+        if (plan.isEmpty()) {
+            player.sendMessage("§cYou don't have required items.");
+            updateOutput(player, gui);
+            return;
+        }
+
+        // 4) Wykonujemy plan: zdejmij itemy z ekwipunku i wstaw do gridu
+        applyConsumeOpsToPlayerInventory(player, plan.get().consumeOps());
+        applyGridPlanToGui(gui, maxPlan16);
+
+        // 5) Odśwież wynik i podpowiedzi
+        updateOutput(player, gui);
+        runNextTickIfPossible(player::updateInventory);
+    }
+
+    private void clearGridToPlayer(Player player, CraftingGUI gui) {
+        for (int slot : CraftingGUI.GRID_SLOTS) {
+            ItemStack item = gui.getInventory().getItem(slot);
+            if (item == null || item.getType().isAir()) {
+                continue;
+            }
+            gui.getInventory().setItem(slot, null);
+            addItemToPlayerOrDrop(player, item);
+        }
+    }
+
+    private ItemStack[] buildGridPlan16ForSuggestion(Player player, CraftingSuggestion suggestion) {
+        if (suggestion.getKind() == CraftingSuggestion.Kind.CUSTOM) {
+            RecipeManager manager = RecipeManager.getInstance();
+            if (manager == null) {
+                return null;
+            }
+            Optional<CraftingRecipe> recipeOpt = manager.getRecipe(suggestion.getId());
+            if (recipeOpt.isEmpty()) {
+                return null;
+            }
+
+            CraftingRecipe recipe = recipeOpt.get();
+            RecipePattern pattern = recipe.getRecipePattern();
+            if (pattern == null || pattern.isEmpty()) {
+                return null;
+            }
+
+            ItemStack[][] p = pattern.getPattern();
+            ItemStack[] plan16 = new ItemStack[16];
+
+            // Układamy w lewym górnym rogu 4x4
+            for (int y = 0; y < Math.min(4, p.length); y++) {
+                ItemStack[] row = p[y];
+                if (row == null) {
+                    continue;
+                }
+                for (int x = 0; x < Math.min(4, row.length); x++) {
+                    ItemStack it = row[x];
+                    if (it == null || it.getType().isAir()) {
+                        continue;
+                    }
+                    ItemStack clone = it.clone();
+                    clone.setAmount(Math.max(1, it.getAmount()));
+                    plan16[y * 4 + x] = clone;
+                }
+            }
+
+            return plan16;
+        }
+
+        if (suggestion.getKind() == CraftingSuggestion.Kind.VANILLA_NMS) {
+            ItemStack[] matrix = suggestion.getVanillaMatrix3x3();
+            if (matrix == null || matrix.length != 9) {
+                return null;
+            }
+
+            ItemStack[] plan16 = new ItemStack[16];
+
+            // Mapujemy 3x3 -> lewy górny róg 4x4.
+            // 3x3 indeksy: (0..2) w rzędzie.
+            for (int y = 0; y < 3; y++) {
+                for (int x = 0; x < 3; x++) {
+                    ItemStack it = matrix[y * 3 + x];
+                    if (it == null || it.getType().isAir()) {
+                        continue;
+                    }
+                    ItemStack clone = it.clone();
+                    clone.setAmount(1);
+                    plan16[y * 4 + x] = clone;
+                }
+            }
+
+            return plan16;
+        }
+
+        return null;
+    }
+
+    private void applyConsumeOpsToPlayerInventory(Player player, List<CraftingAutofillPlanner.ConsumeOp> ops) {
+        if (player == null || ops == null || ops.isEmpty()) {
+            return;
+        }
+
+        // Operujemy na storage (bez armor/offhand)
+        org.bukkit.inventory.PlayerInventory inv = player.getInventory();
+
+        for (CraftingAutofillPlanner.ConsumeOp op : ops) {
+            int slot = op.inventorySlot();
+            int take = op.amount();
+            if (take <= 0) {
+                continue;
+            }
+
+            ItemStack have;
+            try {
+                have = inv.getItem(slot);
+            } catch (Exception e) {
+                continue;
+            }
+
+            if (have == null || have.getType().isAir()) {
+                continue;
+            }
+
+            int amount = have.getAmount();
+            int newAmount = amount - take;
+            if (newAmount <= 0) {
+                inv.setItem(slot, null);
+            } else {
+                have.setAmount(newAmount);
+                inv.setItem(slot, have);
+            }
+        }
+    }
+
+    private void applyGridPlanToGui(CraftingGUI gui, ItemStack[] plan16) {
+        if (gui == null || plan16 == null || plan16.length != 16) {
+            return;
+        }
+
+        // Mapowanie indeksów 0..15 na sloty w GUI
+        for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 4; x++) {
+                int idx = y * 4 + x;
+                ItemStack it = plan16[idx];
+                int slot;
+                if (y == 0) {
+                    slot = 0 + x;
+                } else if (y == 1) {
+                    slot = 9 + x;
+                } else if (y == 2) {
+                    slot = 18 + x;
+                } else {
+                    slot = 27 + x;
+                }
+
+                if (it == null || it.getType().isAir()) {
+                    gui.getInventory().setItem(slot, null);
+                } else {
+                    gui.getInventory().setItem(slot, it.clone());
+                }
+            }
+        }
+    }
+
+    /**
+     * Aktualizuje ikonki "craft suggestions" na podstawie ekwipunku gracza.
+     *
+     * Proste zasady:
+     * - pokazujemy tylko to, co da się zrobić z tego co gracz ma
+     * - najpierw custom, potem vanilla
+     * - limit = liczba slotów podpowiedzi w GUI
+     */
+    private void updateSuggestions(Player player, CraftingGUI gui) {
+        if (player == null || gui == null) {
+            return;
+        }
+
+        RecipeManager manager = RecipeManager.getInstance();
+        if (manager == null) {
+            return;
+        }
+
+        int limit = CraftingGUI.SUGGESTION_SLOTS.length;
+
+        // 1) Custom podpowiedzi (nasza mechanika)
+        List<CraftingSuggestion> finalSuggestions = new ArrayList<>();
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+
+        ItemStack[] inv = player.getInventory().getStorageContents();
+
+        for (CraftingRecipe recipe : manager.getAllRecipes()) {
+            if (finalSuggestions.size() >= limit) {
+                break;
+            }
+            if (recipe == null) {
+                continue;
+            }
+            if (!hasRecipePermission(player, recipe.getPermission())) {
+                continue;
+            }
+
+            RecipePattern pattern = recipe.getRecipePattern();
+            if (pattern == null || pattern.isEmpty()) {
+                continue;
+            }
+
+            List<ItemStack> required = new ArrayList<>();
+            ItemStack[][] p = pattern.getPattern();
+            if (p != null) {
+                for (ItemStack[] row : p) {
+                    if (row == null) {
+                        continue;
+                    }
+                    for (ItemStack it : row) {
+                        if (it == null || it.getType().isAir()) {
+                            continue;
+                        }
+                        required.add(it);
+                    }
+                }
+            }
+            if (required.isEmpty()) {
+                continue;
+            }
+
+            if (!RecipeSuggestionEngine.canCraftOnce(inv, required, ItemStack::isSimilar)) {
+                continue;
+            }
+
+            ItemStack icon = recipe.getOutput();
+            if (icon == null || icon.getType().isAir()) {
+                continue;
+            }
+            int sig = 31 * icon.getType().hashCode();
+            if (seen.contains(sig)) {
+                continue;
+            }
+            seen.add(sig);
+
+            finalSuggestions.add(CraftingSuggestion.custom(recipe.getId(), icon));
+        }
+
+        // 2) Vanilla podpowiedzi z NMS (tylko jeśli mamy NMS)
+        if (finalSuggestions.size() < limit) {
+            int remaining = limit - finalSuggestions.size();
+            NmsVanillaSuggestionEngine nms = new NmsVanillaSuggestionEngine();
+            List<NmsVanillaSuggestion> vanilla = nms.computeSuggestions(inv, player.getWorld(), remaining);
+            for (NmsVanillaSuggestion s : vanilla) {
+                if (finalSuggestions.size() >= limit) {
+                    break;
+                }
+                if (s == null || s.getOutput() == null || s.getOutput().getType().isAir()) {
+                    continue;
+                }
+                finalSuggestions.add(CraftingSuggestion.vanillaNms(s.getRecipeId(), s.getOutput(), s.getMatrix3x3()));
+            }
+        }
+
+        // Zapamiętaj kolejność, żeby klik działał.
+        suggestionsByPlayer.put(player.getUniqueId(), finalSuggestions);
+
+        // Renderuj ikonki do GUI.
+        List<ItemStack> icons = new ArrayList<>();
+        for (CraftingSuggestion s : finalSuggestions) {
+            ItemStack icon = s.getIcon();
+            if (icon == null || icon.getType().isAir()) {
+                continue;
+            }
+
+            // Dodaj lore "Click to fill" (tekst w grze po angielsku)
+            try {
+                org.bukkit.inventory.meta.ItemMeta meta = icon.getItemMeta();
+                if (meta != null) {
+                    java.util.List<net.kyori.adventure.text.Component> lore = new ArrayList<>();
+                    lore.add(net.kyori.adventure.text.Component.text("§7Click to fill recipe"));
+                    meta.lore(lore);
+                    icon.setItemMeta(meta);
+                }
+            } catch (Exception ignored) {
+            }
+
+            icons.add(icon);
+        }
+        gui.setSuggestions(icons);
     }
 
     /**
@@ -953,6 +1339,12 @@ public class CraftingGUIListener implements Listener {
                 event.setCancelled(true);
                 return;
             }
+
+            // Sloty podpowiedzi są read-only, nie wolno na nie drag'ować.
+            if (gui.isSuggestionSlot(slot) || gui.isSuggestionsInfoSlot(slot)) {
+                event.setCancelled(true);
+                return;
+            }
         }
 
         // Jeśli którykolwiek slot w drag'u to output (slot 24) - blokuj!
@@ -1029,6 +1421,14 @@ public class CraftingGUIListener implements Listener {
         // (Bez tego gracz mógłby stracić itemy.)
         for (int slot = 0; slot < guiInv.getSize(); slot++) {
             if (slot == CraftingGUI.OUTPUT_SLOT) {
+                continue;
+            }
+
+            // Sloty podpowiedzi to tylko ikonki UI.
+            // Gdybyśmy je "zwracali" do gracza, to robi się darmowy dupe.
+            if (gui.isSuggestionSlot(slot) || gui.isSuggestionsInfoSlot(slot)) {
+                // Czyścimy, ale nie zwracamy.
+                guiInv.setItem(slot, null);
                 continue;
             }
 

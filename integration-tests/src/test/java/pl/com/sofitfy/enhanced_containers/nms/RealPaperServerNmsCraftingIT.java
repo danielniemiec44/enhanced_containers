@@ -108,6 +108,9 @@ class RealPaperServerNmsCraftingIT {
         assertEquals("true", props.getProperty("repair.ok"), "Repair should pass");
         assertEquals("true", props.getProperty("dye.ok"), "Dye should pass");
 
+        assertTrue(Boolean.parseBoolean(props.getProperty("suggestions.ok")), "suggestions.ok should be true");
+        assertTrue(Boolean.parseBoolean(props.getProperty("suggestions.planks.ok")), "suggestions.planks.ok should be true");
+
             assertTrue(Boolean.parseBoolean(props.getProperty("repairClamp.ok")), "repairClamp.ok should be true");
             assertTrue(Boolean.parseBoolean(props.getProperty("dyeMulti.ok")), "dyeMulti.ok should be true");
             assertTrue(Boolean.parseBoolean(props.getProperty("dyeMultiDyed.ok")), "dyeMultiDyed.ok should be true");
