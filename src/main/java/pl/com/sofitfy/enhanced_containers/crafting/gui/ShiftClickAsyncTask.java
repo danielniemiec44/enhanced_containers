@@ -48,6 +48,9 @@ public class ShiftClickAsyncTask extends BukkitRunnable {
     // Flaga - czy pokazać komunikat "Inventory full"
     private boolean inventoryFullMessageNeeded = false;
     
+    // Snapshot inventory gracza do symulacji (deep copy)
+    private final ItemStack[] playerInventorySnapshot;
+    
     /**
      * Tworzy async task do craftingu.
      * 
@@ -57,6 +60,7 @@ public class ShiftClickAsyncTask extends BukkitRunnable {
      * @param listener CraftingGUIListener instance do updateOutput
      * @param foundRecipe receptura do craftowania (CraftingRecipe lub VanillaRecipe)
      * @param craftOutput item co się craftuje
+     * @param playerInventorySnapshot snapshot inventory gracza (deep copy)
      */
     public ShiftClickAsyncTask(
         @NotNull Player player,
@@ -64,7 +68,8 @@ public class ShiftClickAsyncTask extends BukkitRunnable {
         @NotNull JavaPlugin plugin,
         @NotNull CraftingGUIListener listener,
         @Nullable Object foundRecipe,
-        @Nullable ItemStack craftOutput
+        @Nullable ItemStack craftOutput,
+        @NotNull ItemStack[] playerInventorySnapshot
     ) {
         this.player = player;
         this.gui = gui;
@@ -72,6 +77,7 @@ public class ShiftClickAsyncTask extends BukkitRunnable {
         this.listener = listener;
         this.foundRecipe = foundRecipe;
         this.craftOutput = craftOutput;
+        this.playerInventorySnapshot = playerInventorySnapshot;
     }
 
     /**
@@ -96,10 +102,10 @@ public class ShiftClickAsyncTask extends BukkitRunnable {
         
         // PĘTLA CRAFTINGU - robimy async bez lockowania serwera
         while (craftedCount < MAX_CRAFTS) {
-            // Sprawdź czy jest miejsce w EQ PRZED craftingiem (tylko dla shift+click)
+            // Sprawdź czy jest miejsce w EQ PRZED craftingiem (używając snapshotu)
             // Symuluje vanilla workbench - jeśli EQ pełne, przerywa shift+click
-            // Uwzględnia itemy już scraftowane w tej pętli (craftedCount)
-            if (!CraftingGUIListener.canAddToInventory(player, craftOutput, craftedCount)) {
+            // Metoda simulateAdd modyfikuje snapshot, więc dokładnie śledzi zapełnienie
+            if (!CraftingGUIListener.simulateAdd(playerInventorySnapshot, craftOutput)) {
                 // Brak miejsca - przerwij pętlę i wyślij komunikat (NIE konsumujemy składników)
                 inventoryFullMessageNeeded = true;
                 break;

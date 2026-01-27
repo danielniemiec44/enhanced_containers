@@ -9,6 +9,10 @@ import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeSelectionListener;
 import pl.com.sofitfy.enhanced_containers.crafting.nms.NmsCraftingSelfTestRunner;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeLoader;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeManager;
+import pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingListener;
+import pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingManager;
+import pl.com.sofitfy.enhanced_containers.sharedcrafting.nms.RecipeBookPacketHandler;
+import pl.com.sofitfy.enhanced_containers.sharedcrafting.nms.RecipeBookPacketListener;
 
 public class Main extends JavaPlugin {
     // Nazwa pluginu i prefix do wiadomości
@@ -32,6 +36,8 @@ public class Main extends JavaPlugin {
 
     private ConfigManager configManager;
     private CraftingGUIListener guiListener;
+    private SharedCraftingManager sharedCraftingManager;
+    private RecipeBookPacketHandler recipeBookPacketHandler;
 
     @Override
     public void onEnable() {
@@ -103,6 +109,30 @@ public class Main extends JavaPlugin {
             // Włączane przez: -Dplethoras.nmsSelfTest=true
             new NmsCraftingSelfTestRunner(this).maybeRun();
 
+            // Inicjalizacja Współdzielonego Craftingu (Shared Crafting)
+            this.sharedCraftingManager = new SharedCraftingManager(this);
+            this.sharedCraftingManager.loadData();
+            SharedCraftingListener sharedCraftingListener = new SharedCraftingListener(this.sharedCraftingManager);
+            getServer().getPluginManager().registerEvents(sharedCraftingListener, this);
+            
+            // Inicjalizacja NMS packet handlera dla Recipe Book
+            this.recipeBookPacketHandler = new RecipeBookPacketHandler(this, this.sharedCraftingManager);
+            RecipeBookPacketListener recipeBookListener = new RecipeBookPacketListener(this.recipeBookPacketHandler);
+            getServer().getPluginManager().registerEvents(recipeBookListener, this);
+            // Zarejestruj handlery dla graczy którzy już są online (hot-reload pluginu)
+            this.recipeBookPacketHandler.registerAllPlayers();
+            getLogger().info(PLUGIN_PREFIX + "Recipe Book NMS packet handler initialized!");
+            
+            // Okresowa walidacja stołów rzemieślniczych - co 1 sekundę (20 ticków)
+            // Sprawdza czy bloki nadal są CRAFTING_TABLE, jeśli nie - dropuje itemy
+            // Częsta walidacja łapie zmiany bloków przez pluginy (WorldEdit, /setblock, itp.)
+            getServer().getScheduler().runTaskTimer(this, () -> {
+                this.sharedCraftingManager.validateAndCleanupInvalidWorkbenches();
+                // Nie logujemy - za często by spamowało
+            }, 20L, 20L); // Start po 1 sek, powtarzaj co 1 sek
+            
+            getLogger().info(PLUGIN_PREFIX + "Shared Crafting module initialized!");
+
 
             getLogger().info(PLUGIN_PREFIX + "§aPlugin fully loaded!");
         } catch (Exception e) {
@@ -113,6 +143,15 @@ public class Main extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        // Wyrejestruj packet handlery dla wszystkich graczy
+        if (this.recipeBookPacketHandler != null) {
+            this.recipeBookPacketHandler.unregisterAllPlayers();
+        }
+        
+        if (this.sharedCraftingManager != null) {
+            this.sharedCraftingManager.closeAllInventories();
+            this.sharedCraftingManager.saveData();
+        }
         getLogger().info(PLUGIN_PREFIX + "Plugin is shutting down!");
     }
 }

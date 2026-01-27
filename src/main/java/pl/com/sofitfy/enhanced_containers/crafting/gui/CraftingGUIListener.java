@@ -185,25 +185,34 @@ public class CraftingGUIListener implements Listener {
             // Shift+click z ekwipunku - wkładaj przedmioty do gridu
             // Naturalnie, bez duplikacji, niezależnie od gamemode
             if (event.isShiftClick() || action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
-                ItemStack moving = event.getCurrentItem();
+                // Blokujemy domyślny transfer - robimy własny, tylko do slotów gridu
+                event.setCancelled(true);
+
+                // Pobierz kliknięte inventory i slot
+                Inventory clickedInv = event.getClickedInventory();
+                if (clickedInv == null) {
+                    return;
+                }
+                int clickedSlot = event.getSlot();
+
+                // Pobieramy item bezpośrednio z inventory (nie z event.getCurrentItem())
+                // event.getCurrentItem() może być null w niektórych środowiskach testowych
+                // ale clickedInv.getItem(slot) zawsze jest niezawodne
+                ItemStack moving = clickedInv.getItem(clickedSlot);
                 if (moving == null || moving.getType().isAir()) {
                     return;
                 }
-
-                // Blokujemy domyślny transfer - robimy własny, tylko do slotów gridu
-                event.setCancelled(true);
 
                 // Pracujemy na KOPII - oryginał zostaje niezmieniony
                 ItemStack workingCopy = moving.clone();
                 ItemStack remaining = moveIntoGrid(gui.getInventory(), workingCopy);
 
-                // KLUCZOWE: Zmieniamy "current item" w EVECIE przed zakończeniem handlera
-                // Bukkit przywraca snapshot tego co było w event.getCurrentItem()
-                // Więc jak zmienimy current item na remaining, Bukkit przywróci remaining (nie oryginał)
+                // KLUCZOWE: Bezpośrednio ustawiamy item w inventory gracza
+                // event.setCurrentItem() NIE działa poprawnie gdy event jest anulowany!
                 if (remaining == null || remaining.getType().isAir() || remaining.getAmount() <= 0) {
-                    event.setCurrentItem(null);
+                    clickedInv.setItem(clickedSlot, null);
                 } else {
-                    event.setCurrentItem(remaining);
+                    clickedInv.setItem(clickedSlot, remaining);
                 }
 
                 runNextTickIfPossible(() -> updateOutput(player, gui));
@@ -289,9 +298,16 @@ public class CraftingGUIListener implements Listener {
                 return;
             }
 
-            // ========== OPERACJA 3: WSZYSTKIE INNE KLIKI ==========
+            // ========== OPERACJA 3: DROP (KLAWISZ Q) - VANILLA BEHAVIOR: DROPUJ NA ZIEMIĘ ==========
+            if (clickType == ClickType.DROP || clickType == ClickType.CONTROL_DROP) {
+                // Vanilla behavior: Q na result slot ZAWSZE dropuje na ziemię
+                handleDropClickOutput(event, player, gui, output);
+                return;
+            }
+
+            // ========== OPERACJA 4: WSZYSTKIE INNE KLIKI ==========
             // Event już anulowany - nic więcej nie robimy
-            // (DOUBLE_CLICK, DROP, NUMBER_KEY, MIDDLE - wszystko zablokowane)
+            // (DOUBLE_CLICK, NUMBER_KEY, MIDDLE - wszystko zablokowane)
             return;
         }
 
@@ -871,18 +887,20 @@ public class CraftingGUIListener implements Listener {
         ItemStack[] gridItems = extractGridItems(gui);
         
         // DEBUG: Wyświetl pełny grid 4x4
-        plugin.getLogger().info("[DEBUG] Pełny grid 4x4 przed kopiowaniem:");
-        for (int row = 0; row < 4; row++) {
-            StringBuilder sb = new StringBuilder("  Row " + row + ": ");
-            for (int col = 0; col < 4; col++) {
-                ItemStack item = gridItems[row * 4 + col];
-                if (item == null || item.getType().isAir()) {
-                    sb.append("[AIR] ");
-                } else {
-                    sb.append("[").append(item.getType()).append(" x").append(item.getAmount()).append("] ");
+        if (plugin != null) {
+            plugin.getLogger().info("[DEBUG] Pełny grid 4x4 przed kopiowaniem:");
+            for (int row = 0; row < 4; row++) {
+                StringBuilder sb = new StringBuilder("  Row " + row + ": ");
+                for (int col = 0; col < 4; col++) {
+                    ItemStack item = gridItems[row * 4 + col];
+                    if (item == null || item.getType().isAir()) {
+                        sb.append("[AIR] ");
+                    } else {
+                        sb.append("[").append(item.getType()).append(" x").append(item.getAmount()).append("] ");
+                    }
                 }
+                plugin.getLogger().info(sb.toString());
             }
-            plugin.getLogger().info(sb.toString());
         }
         
         // Zapisz grid PRZED jakimkolwiek usunięciem składników (dla remainder items)
@@ -911,19 +929,12 @@ public class CraftingGUIListener implements Listener {
             // Znaleźliśmy recepturę! RĘCZNIE obsługujemy pickup:
             
             // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
-            // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
-            // Nie wolno ustawiać player.setItemOnCursor() bo spowoduje duplikację.
-            if (event != null) {
-                event.setCursor(newCursor);
-            }
+            // KRYTYCZNE: W anulowanych eventach event.setCursor() NIE działa poprawnie!
+            // Musimy użyć player.setItemOnCursor() aby faktycznie zmienić kursor.
+            player.setItemOnCursor(newCursor);
             
             // 2. Wyczyść output slot
             gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
-            if (event != null) {
-                // Bukkit potrafi przywrócić kliknięty slot z wartości event.getCurrentItem().
-                // Ustawiamy null, żeby nie było desync (zwłaszcza przy wielokrotnym klikaniu).
-                event.setCurrentItem(null);
-            }
             
             // 3. Usuń składniki z gridu
             RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
@@ -963,16 +974,11 @@ public class CraftingGUIListener implements Listener {
                 // Znaleźliśmy vanilla shaped recepturę! RĘCZNIE obsługujemy pickup:
                 
                 // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
-                // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
-                if (event != null) {
-                    event.setCursor(newCursor);
-                }
+                // KRYTYCZNE: W anulowanych eventach event.setCursor() NIE działa poprawnie!
+                player.setItemOnCursor(newCursor);
                 
                 // 2. Wyczyść output slot
                 gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
-                if (event != null) {
-                    event.setCurrentItem(null);
-                }
                 
                 // 3. Usuń składniki z gridu
                 RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
@@ -1040,15 +1046,10 @@ public class CraftingGUIListener implements Listener {
         // To eliminuje przypadki, gdzie output istnieje, ale kliknięcie/zużycie mówi "nie da się".
         ItemStack simulated = tryVanillaCrafting4x4Fallback(player, gridItems);
         if (simulated != null && simulated.getAmount() == output.getAmount() && simulated.isSimilar(output)) {
-            // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
-            if (event != null) {
-                event.setCursor(newCursor);
-            }
+            // KRYTYCZNE: W anulowanych eventach event.setCursor() NIE działa poprawnie!
+            player.setItemOnCursor(newCursor);
 
             gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
-            if (event != null) {
-                event.setCurrentItem(null);
-            }
 
             consumeAllOccupiedOnce(gridItems);
             
@@ -1064,14 +1065,9 @@ public class CraftingGUIListener implements Listener {
         // Żadna receptura nie pasowała - nie powinno się zdarzyć
         // (output był tam bo receptura pasowała wcześniej)
         // Bezpieczna fallback: daj graczowi output bez usuwania składników
-        // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
-        if (event != null) {
-            event.setCursor(newCursor);
-        }
+        // KRYTYCZNE: W anulowanych eventach event.setCursor() NIE działa poprawnie!
+        player.setItemOnCursor(newCursor);
         gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
-        if (event != null) {
-            event.setCurrentItem(null);
-        }
         updateOutput(player, gui);
         runNextTickIfPossible(player::updateInventory);
     }
@@ -1289,6 +1285,131 @@ public class CraftingGUIListener implements Listener {
     }
 
     /**
+     * Obsługuje DROP (klawisz Q) na output slot.
+     * Zachowanie jak vanilla: craftuje i dropuje wynik na ziemię.
+     */
+    private void handleDropClickOutput(InventoryClickEvent event, Player player, CraftingGUI gui, ItemStack output) {
+        if (player == null || gui == null || output == null || output.getType().isAir()) {
+            return;
+        }
+
+        RecipeManager manager = RecipeManager.getInstance();
+        if (manager == null) {
+            return;
+        }
+
+        // Wyodrębni przedmioty z gridu
+        ItemStack[] gridItems = extractGridItems(gui);
+        
+        // Zapisz grid PRZED jakimkolwiek usunięciem składników (dla remainder items)
+        ItemStack[] gridBeforeCrafting = new ItemStack[gridItems.length];
+        for (int i = 0; i < gridItems.length; i++) {
+            gridBeforeCrafting[i] = gridItems[i] != null ? gridItems[i].clone() : null;
+        }
+
+        // Znajdź recepturę która pasuje - najpierw custom
+        for (CraftingRecipe recipe : manager.getAllRecipes()) {
+            if (recipe == null || !hasRecipePermission(player, recipe.getPermission())) {
+                continue;
+            }
+
+            RecipePattern pattern = recipe.getRecipePattern();
+            if (pattern == null || pattern.isEmpty()) {
+                continue;
+            }
+
+            PatternMatchResult matchResult = RecipeMatcher.findPatternMatchExactly(gridItems, pattern);
+            if (!matchResult.isMatched()) {
+                continue;
+            }
+
+            // Znaleźliśmy recepturę! Dropuj na ziemię
+            player.getWorld().dropItemNaturally(player.getLocation(), output.clone());
+            
+            // Wyczyść output slot
+            gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+            
+            // Usuń składniki z gridu
+            RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
+            
+            // Aplikuj remainder items i zaktualizuj grid
+            applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+            updateGridSlots(gui, gridItems);
+
+            // Aktualizuj output
+            updateOutput(player, gui);
+            return;
+        }
+
+        // Nie znaleziono custom receptury - spróbuj vanilla shaped receptury
+        for (VanillaRecipe recipe : manager.getAllVanillaRecipes()) {
+            if (recipe == null) {
+                continue;
+            }
+
+            if (!recipe.isShapeless()) {
+                ItemStack[][] pattern = recipe.getPattern();
+                if (pattern == null) {
+                    continue;
+                }
+
+                PatternMatchResult matchResult = RecipeMatcher.findPatternMatchVanilla(gridItems, pattern);
+                if (!matchResult.isMatched()) {
+                    continue;
+                }
+
+                // Znaleźliśmy vanilla shaped recepturę! Dropuj na ziemię
+                player.getWorld().dropItemNaturally(player.getLocation(), output.clone());
+                
+                // Wyczyść output slot
+                gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+                
+                // Usuń składniki z gridu
+                RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
+                
+                // Aplikuj remainder items i zaktualizuj grid
+                applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+                updateGridSlots(gui, gridItems);
+                
+                // Aktualizuj output
+                updateOutput(player, gui);
+                return;
+            }
+            // Vanilla shapeless receptura
+            else {
+                List<ItemStack> ingredients = recipe.getShapelessIngredients();
+                if (ingredients == null || ingredients.isEmpty()) {
+                    continue;
+                }
+
+                if (!RecipeMatcher.matchesShapelessVanilla(gridItems, ingredients)) {
+                    continue;
+                }
+
+                // Znaleźliśmy vanilla shapeless recepturę! Dropuj na ziemię
+                player.getWorld().dropItemNaturally(player.getLocation(), output.clone());
+                
+                // Wyczyść output slot
+                gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
+                
+                // Usuń 1 od każdego slotu (shapeless)
+                consumeAllOccupiedOnce(gridItems);
+                
+                // Aplikuj remainder items i zaktualizuj grid
+                applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+                updateGridSlots(gui, gridItems);
+                
+                // Aktualizuj output
+                updateOutput(player, gui);
+                return;
+            }
+        }
+
+        // Żadna receptura nie pasowała - nie robimy nic (output pozostaje)
+        // Vanilla behavior: Q na result slot bez składników nic nie robi
+    }
+
+    /**
      * Obsługuje Shift+Click na output slot.
      * Craftuje wielokrotnie ASYNCHRONICZNIE - TYLKO TĄ SAMĄ RECEPTURĘ - aż się zmieni lub zabraknie składników.
      * 
@@ -1467,7 +1588,18 @@ public class CraftingGUIListener implements Listener {
             return;
         }
 
-        ShiftClickAsyncTask asyncTask = new ShiftClickAsyncTask(player, gui, pluginToUse, this, foundRecipe, craftOutput);
+        // Snapshot inventory gracza (deep copy) do symulacji async
+        ItemStack[] playerInv = player.getInventory().getContents();
+        ItemStack[] inventorySnapshot = new ItemStack[playerInv.length];
+        for (int i = 0; i < playerInv.length; i++) {
+            if (playerInv[i] != null) {
+                inventorySnapshot[i] = playerInv[i].clone();
+            } else {
+                inventorySnapshot[i] = null;
+            }
+        }
+
+        ShiftClickAsyncTask asyncTask = new ShiftClickAsyncTask(player, gui, pluginToUse, this, foundRecipe, craftOutput, inventorySnapshot);
         asyncTask.runTaskAsynchronously(pluginToUse);
     }
 
@@ -1922,23 +2054,27 @@ public class CraftingGUIListener implements Listener {
         }
         
         if (gridBeforeCrafting.length != 16 || gridItems.length != 16) {
-            plugin.getLogger().warning("applyRemainingItemsToGrid: grids must be 4x4 (length 16), got: " + gridBeforeCrafting.length + " and " + gridItems.length);
+            if (plugin != null) {
+                plugin.getLogger().warning("applyRemainingItemsToGrid: grids must be 4x4 (length 16), got: " + gridBeforeCrafting.length + " and " + gridItems.length);
+            }
             return;
         }
         
         // DEBUG: Wyświetl gridBeforeCrafting w applyRemainingItemsToGrid
-        plugin.getLogger().info("[DEBUG] gridBeforeCrafting w applyRemainingItemsToGrid:");
-        for (int row = 0; row < 4; row++) {
-            StringBuilder sb = new StringBuilder("  Row " + row + ": ");
-            for (int col = 0; col < 4; col++) {
-                ItemStack item = gridBeforeCrafting[row * 4 + col];
-                if (item == null || item.getType().isAir()) {
-                    sb.append("[AIR] ");
-                } else {
-                    sb.append("[").append(item.getType()).append(" x").append(item.getAmount()).append("] ");
+        if (plugin != null) {
+            plugin.getLogger().info("[DEBUG] gridBeforeCrafting w applyRemainingItemsToGrid:");
+            for (int row = 0; row < 4; row++) {
+                StringBuilder sb = new StringBuilder("  Row " + row + ": ");
+                for (int col = 0; col < 4; col++) {
+                    ItemStack item = gridBeforeCrafting[row * 4 + col];
+                    if (item == null || item.getType().isAir()) {
+                        sb.append("[AIR] ");
+                    } else {
+                        sb.append("[").append(item.getType()).append(" x").append(item.getAmount()).append("] ");
+                    }
                 }
+                plugin.getLogger().info(sb.toString());
             }
-            plugin.getLogger().info(sb.toString());
         }
         
         // Sprawdź każdy slot indywidualnie używając NMS aby znaleźć remainder items
@@ -1961,12 +2097,16 @@ public class CraftingGUIListener implements Listener {
                 if (itemAfter == null || itemAfter.getType().isAir()) {
                     gridItems[i] = remainder;
                     appliedCount++;
-                    plugin.getLogger().info("[DEBUG] Aplikowano remainder item: " + remainder + " do slotu 4x4[" + i + "]");
+                    if (plugin != null) {
+                        plugin.getLogger().info("[DEBUG] Aplikowano remainder item: " + remainder + " do slotu 4x4[" + i + "]");
+                    }
                 }
             }
         }
         
-        plugin.getLogger().info("[DEBUG] Łącznie aplikowano " + appliedCount + " remainder items");
+        if (plugin != null) {
+            plugin.getLogger().info("[DEBUG] Łącznie aplikowano " + appliedCount + " remainder items");
+        }
     }
     
     /**
@@ -1994,6 +2134,64 @@ public class CraftingGUIListener implements Listener {
      */
     public static boolean canAddToInventory(Player player, ItemStack item) {
         return canAddToInventory(player, item, 0);
+    }
+
+    /**
+     * Symuluje dodanie itemu do snapshotu inventory (tablica ItemStack).
+     * Modyfikuje tablicę inventoryContents, wypełniając istniejące stacki lub puste sloty.
+     * 
+     * @param inventoryContents Tablica ItemStack[] reprezentująca inventory (będzie modyfikowana!)
+     * @param item Item do dodania
+     * @return true jeśli item zmieścił się w całości, false jeśli nie
+     */
+    public static boolean simulateAdd(ItemStack[] inventoryContents, ItemStack item) {
+        if (inventoryContents == null || item == null || item.getType().isAir()) {
+            return true;
+        }
+
+        int remainingAmount = item.getAmount();
+        int maxStackSize = item.getMaxStackSize();
+
+        // 1. Najpierw spróbuj dodać do istniejących stacków (tylko storage slots 0-35)
+        // Main inventory w Bukkit to 0-35 (hotbar + storage) w getContents()
+        // getContents() zwraca [0-35] (storage), [36-39] (armor), [40] (offhand)
+        // Minecraft pozwala dodawać tylko do storage (0-35) przy pickupie.
+        int limit = Math.min(inventoryContents.length, 36);
+
+        for (int i = 0; i < limit; i++) {
+            ItemStack slot = inventoryContents[i];
+            
+            if (slot != null && slot.isSimilar(item)) {
+                int space = maxStackSize - slot.getAmount();
+                if (space > 0) {
+                    int toAdd = Math.min(remainingAmount, space);
+                    slot.setAmount(slot.getAmount() + toAdd);
+                    remainingAmount -= toAdd;
+                    if (remainingAmount <= 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 2. Jeśli nadal zostało, szukaj pustych slotów
+        for (int i = 0; i < limit; i++) {
+            ItemStack slot = inventoryContents[i];
+            
+            if (slot == null || slot.getType().isAir()) {
+                int toAdd = Math.min(remainingAmount, maxStackSize);
+                ItemStack newStack = item.clone();
+                newStack.setAmount(toAdd);
+                inventoryContents[i] = newStack;
+                
+                remainingAmount -= toAdd;
+                if (remainingAmount <= 0) {
+                    return true;
+                }
+            }
+        }
+
+        return remainingAmount <= 0;
     }
     
     /**

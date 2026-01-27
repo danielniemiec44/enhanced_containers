@@ -333,8 +333,8 @@ class CraftingGUIScenarioIntegrationTest extends MockBukkitPluginTestBase {
     }
 
     @Test
-    @DisplayName("Drop key na output jest blokowany")
-    void dropKeyOnOutput_IsBlocked() {
+    @DisplayName("Drop key (Q) na output bez składników jest blokowany")
+    void dropKeyOnOutputWithoutIngredients_IsBlocked() {
         // Przygotowanie
         PlayerMock player = createPlayer();
         player.setOp(true);
@@ -343,6 +343,7 @@ class CraftingGUIScenarioIntegrationTest extends MockBukkitPluginTestBase {
         CraftingGUIListener listener = new CraftingGUIListener();
         listener.registerGUI(gui);
 
+        // Output bez składników (symulowany wynik)
         gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, new ItemStack(Material.DIAMOND_BLOCK, 1));
         player.openInventory(gui.getInventory());
 
@@ -356,11 +357,91 @@ class CraftingGUIScenarioIntegrationTest extends MockBukkitPluginTestBase {
 
         listener.onInventoryClick(event);
 
-        assertTrue(event.isCancelled(), "Drop key na output musi być zablokowany");
+        assertTrue(event.isCancelled(), "Drop key na output musi być zablokowany (obsługiwany ręcznie)");
 
+        // Bez składników output nie znika (nie ma z czego scraftować)
         ItemStack output = gui.getInventory().getItem(CraftingGUI.OUTPUT_SLOT);
-        assertNotNull(output, "Output nie może zniknąć");
+        assertNotNull(output, "Output nie może zniknąć bez składników");
         assertEquals(Material.DIAMOND_BLOCK, output.getType(), "Output powinien zostać");
+    }
+
+    @Test
+    @DisplayName("Drop key (Q) na output ze składnikami craftuje i dropuje na ziemię (vanilla behavior)")
+    void dropKeyOnOutputWithIngredients_CraftsAndDropsToGround() {
+        // Przygotowanie
+        PlayerMock player = createPlayer();
+        player.setOp(true);
+
+        CraftingGUI gui = new CraftingGUI(player, "Crafting");
+        CraftingGUIListener listener = new CraftingGUIListener();
+        listener.registerGUI(gui);
+
+        // Ustawiamy składniki dla planks (4x4 grid - sloty 0,1,2,3,9,10,11,12,18,19,20,21,27,28,29,30)
+        // Jeden log w slocie 0 -> 4 planki
+        gui.getInventory().setItem(0, new ItemStack(Material.OAK_LOG, 1));
+        
+        // Aktualizujemy output (symulacja)
+        gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, new ItemStack(Material.OAK_PLANKS, 4));
+        player.openInventory(gui.getInventory());
+        
+        // Kursor pusty
+        player.setItemOnCursor(null);
+
+        InventoryClickEvent event = new InventoryClickEvent(
+            player.getOpenInventory(),
+            InventoryType.SlotType.CONTAINER,
+            CraftingGUI.OUTPUT_SLOT,
+            ClickType.DROP,
+            InventoryAction.DROP_ONE_SLOT
+        );
+
+        listener.onInventoryClick(event);
+
+        assertTrue(event.isCancelled(), "Event powinien być anulowany (obsługujemy ręcznie)");
+        
+        // Vanilla behavior: Q na result slot ZAWSZE dropuje na ziemię (nie daje na kursor)
+        ItemStack cursor = player.getItemOnCursor();
+        assertTrue(cursor == null || cursor.getType() == Material.AIR,
+            "Kursor powinien być pusty - Q dropuje na ziemię, nie daje na kursor");
+    }
+
+    @Test
+    @DisplayName("Drop key (Q) na output z zajętym kursorem nadal dropuje na ziemię")
+    void dropKeyOnOutputWithCursorOccupied_DropsToGround() {
+        // Przygotowanie
+        PlayerMock player = createPlayer();
+        player.setOp(true);
+
+        CraftingGUI gui = new CraftingGUI(player, "Crafting");
+        CraftingGUIListener listener = new CraftingGUIListener();
+        listener.registerGUI(gui);
+
+        // Składnik
+        gui.getInventory().setItem(0, new ItemStack(Material.OAK_LOG, 1));
+        gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, new ItemStack(Material.OAK_PLANKS, 4));
+        player.openInventory(gui.getInventory());
+        
+        // Kursor zajęty innym itemem
+        player.setItemOnCursor(new ItemStack(Material.DIAMOND, 5));
+
+        InventoryClickEvent event = new InventoryClickEvent(
+            player.getOpenInventory(),
+            InventoryType.SlotType.CONTAINER,
+            CraftingGUI.OUTPUT_SLOT,
+            ClickType.DROP,
+            InventoryAction.DROP_ONE_SLOT
+        );
+
+        listener.onInventoryClick(event);
+
+        assertTrue(event.isCancelled());
+        
+        // Kursor NIE powinien się zmienić - nadal ma diamenty
+        ItemStack cursor = player.getItemOnCursor();
+        assertNotNull(cursor);
+        assertEquals(Material.DIAMOND, cursor.getType(), 
+            "Kursor powinien nadal mieć diamenty - Q dropuje na ziemię, nie zmienia kursora");
+        assertEquals(5, cursor.getAmount());
     }
 
     @Test

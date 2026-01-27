@@ -137,7 +137,7 @@
                     -->
                     <argLine>-Dnet.bytebuddy.experimental=true</argLine>
                     <!-- Szukaj testów w fazach: surefire dla unit testów, failsafe dla integracyjnych -->
-                    <skipTests>true</skipTests>
+                    <!-- <skipTests>true</skipTests> -->
                 </configuration>
             </plugin>
 

@@ -85,8 +85,8 @@ class CraftCommandGuiTitlesIntegrationTest {
     }
 
     @Test
-    @DisplayName("/4x4 edit otwiera selektor z teksturą i dużym cofnięciem po teksturze")
-    void fourByFourEditOpensSelectorWithTextureAndLargeBackshift() {
+    @DisplayName("/4x4 edit otwiera selektor z normalnym tytułem (bez custom font)")
+    void fourByFourEditOpensSelectorWithNormalTitle() {
         // Przygotowanie: musi istnieć chociaż jedna custom receptura, inaczej komenda /4x4 edit kończy się komunikatem.
         CraftingRecipe recipe = new CraftingRecipe(
             "test_recipe",
@@ -109,10 +109,12 @@ class CraftCommandGuiTitlesIntegrationTest {
         String title = player.getOpenInventory().getTitle();
         assertNotNull(title, "Tytuł nie powinien być null");
 
-        assertTrue(title.contains("\uE001"), "Tytuł selektora powinien zawierać znak custom font (tekstura)");
-        assertTrue(title.contains("Recipe Selection"), "Tytuł selektora powinien zawierać tekst po angielsku");
-
-        int cursorBackCount = countChar(title, '\uF808');
-        assertTrue(cursorBackCount >= 169, "Tytuł selektora powinien mieć co najmniej 169 znaków cofnięcia");
+        // RecipeSelectionGUI celowo NIE używa custom font (tekstury) - tylko CraftingGUI i RecipeEditorGUI używają.
+        // Selektor receptur ma prosty, czytelny tytuł.
+        assertTrue(title.contains("Recipe Selection"), "Tytuł selektora powinien zawierać 'Recipe Selection'");
+        
+        // Tytuł powinien mieć formatowanie kolorów (§6§l)
+        assertTrue(title.contains("§6") || title.contains("§l"), 
+            "Tytuł selektora powinien mieć formatowanie kolorów");
     }
 }

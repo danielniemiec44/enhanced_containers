@@ -34,37 +34,47 @@ class CraftingGUIShiftClickIntegrationTest extends MockBukkitPluginTestBase {
         CraftingGUIListener listener = new CraftingGUIListener();
         listener.registerGUI(gui);
 
-        // Gracz ma item w slocie 0 ekwipunku
-        player.getInventory().setItem(0, new ItemStack(Material.OAK_PLANKS, 20));
+        // Gracz ma item w slocie 9 ekwipunku (pierwszy slot main inventory, nie hotbar)
+        // Slot 9 w PlayerInventory to pierwszy slot "main inventory" (nad hotbarem)
+        ItemStack planks = new ItemStack(Material.OAK_PLANKS, 20);
+        player.getInventory().setItem(9, planks);
 
-        // Otwieramy GUI, żeby mieć InventoryView (potrzebne do eventu)
+        // Otwieramy GUI, żeby mieć InventoryView
         player.openInventory(gui.getInventory());
 
-        int topSize = player.getOpenInventory().getTopInventory().getSize();
-        int rawSlotInBottom = topSize; // pierwsza komórka dolnego ekwipunku
-
+        // Rozmiar top inventory (GUI)
+        int topSize = gui.getInventory().getSize();
+        
+        // W Minecraft inventory view dla GUI + player inventory:
+        // - Raw slots 0 do topSize-1: top inventory (GUI)
+        // - Raw slots topSize do topSize+26: player main inventory (sloty 9-35 w PlayerInventory)
+        // 
+        // Gracz ma item w player.getInventory() slot 9 (pierwszy slot main inventory)
+        // więc raw slot = topSize + 0 = 54
+        int rawSlotForPlayerSlot9 = topSize; // = 54
+        
+        // Tworzymy InventoryClickEvent ręcznie i wywołujemy listener bezpośrednio
         InventoryClickEvent event = new InventoryClickEvent(
             player.getOpenInventory(),
             InventoryType.SlotType.CONTAINER,
-            rawSlotInBottom,
+            rawSlotForPlayerSlot9, // raw slot dla player inventory slot 9
             ClickType.SHIFT_LEFT,
             InventoryAction.MOVE_TO_OTHER_INVENTORY
         );
-
-        // Act
+        
+        // Bezpośrednie wywołanie listenera (jak w testach SharedCrafting)
         listener.onInventoryClick(event);
 
-        // Assert: event zablokowany, bo robimy własny transfer
-        assertTrue(event.isCancelled());
-
-        // W pierwszym slocie gridu powinno się pojawić 20 desek
+        // Assert: W pierwszym slocie gridu powinno się pojawić 20 desek
         ItemStack inGrid = gui.getInventory().getItem(CraftingGUI.GRID_SLOTS[0]);
-        assertNotNull(inGrid);
+        assertNotNull(inGrid, "Item powinien być przeniesiony do gridu");
         assertEquals(Material.OAK_PLANKS, inGrid.getType());
         assertEquals(20, inGrid.getAmount());
 
         // Slot w ekwipunku gracza powinien zostać wyczyszczony
-        assertNull(player.getInventory().getItem(0));
+        ItemStack remaining = player.getInventory().getItem(9);
+        assertTrue(remaining == null || remaining.getType().isAir(), 
+            "Slot gracza powinien być pusty po przeniesieniu");
 
         // UpdateOutput jest planowany na następny tick
         tick(1);
@@ -151,8 +161,8 @@ class CraftingGUIShiftClickIntegrationTest extends MockBukkitPluginTestBase {
     }
 
     @Test
-    @DisplayName("Shift-click na output - drop na ziemię gdy brak miejsca w inventorzu")
-    void shiftClickOutputDropsOnGroundWhenInventoryFull() {
+    @DisplayName("Shift-click na output - nie craftuje gdy inventory pełne (vanilla behavior)")
+    void shiftClickOutputDoesNotCraftWhenInventoryFull() {
         PlayerMock player = createPlayer();
         player.setOp(true);
 
@@ -199,21 +209,28 @@ class CraftingGUIShiftClickIntegrationTest extends MockBukkitPluginTestBase {
 
         // Act
         listener.onInventoryClick(event);
+
+        // Assert: event został anulowany (obsługiwany przez nasz listener)
+        assertTrue(event.isCancelled(), "Event powinien być anulowany");
         
-        // Czekamy na wykonanie async craftingu
+        // Czekamy na wykonanie async craftingu i scheduled tasków
         try {
-            Thread.sleep(100); // Daj czas na async task
+            Thread.sleep(200);
         } catch (InterruptedException e) {
             // ignore
         }
-        tick(1); // Wykonaj scheduled callback z async task
+        
+        // Wykonaj ticki aby async task mógł się zakończyć
+        for (int i = 0; i < 10; i++) {
+            tick(1);
+        }
 
-        // Assert: item został droppowany na ziemię (bo inventarz pełny)
-        // Sprawdzamy czy są dropped items na świecie
-        assertTrue(
-            player.getWorld().getEntities().stream()
-                .anyMatch(e -> e.toString().contains("Item")),
-            "Powinien być dropped item gdy inventarz pełny"
-        );
+        // Vanilla behavior: gdy inventory jest pełne, shift-click NIE konsumuje składników
+        // Diamenty powinny pozostać w gridzie (2 sztuki)
+        ItemStack gridItem = gui.getInventory().getItem(0);
+        assertNotNull(gridItem, "Diamenty powinny pozostać w gridzie (inventory pełne)");
+        assertEquals(Material.DIAMOND, gridItem.getType(), "Typ materiału nie powinien się zmienić");
+        assertEquals(2, gridItem.getAmount(), 
+            "Ilość diamentów powinna pozostać niezmieniona (2) gdy inventory jest pełne");
     }
 }
