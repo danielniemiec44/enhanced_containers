@@ -86,16 +86,8 @@ public class CraftingGUI {
         // Chcemy odwzorować crafting table: wynik pojawia się tylko gdy receptura pasuje.
         inventory.setItem(OUTPUT_SLOT, null);
 
-        // Ikona "recipe hints" w środku ostatniego rzędu.
-        // Teksty w grze po angielsku.
-        ItemStack info = new ItemStack(Material.BOOK);
-        ItemMeta meta = info.getItemMeta();
-        if (meta != null) {
-            meta.displayName(Component.text("§6Recipe suggestions"));
-            meta.lore(List.of(Component.text("§7Shows craftable outputs")));
-            info.setItemMeta(meta);
-        }
-        inventory.setItem(SUGGESTIONS_INFO_SLOT, info);
+        // Slot na info o podpowiedziach - zostawiamy pusty (żadna ikona)
+        inventory.setItem(SUGGESTIONS_INFO_SLOT, null);
     }
 
     /**

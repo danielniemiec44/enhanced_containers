@@ -48,8 +48,8 @@ paperweight.reobfArtifactConfiguration = ReobfArtifactConfiguration.REOBF_PRODUC
 tasks.test {
     // Uwaga: w tym repo testy są "ustawione" pod Maven (są też osobne integration-tests/).
     // Gradle dokładamy głównie po to, żeby mieć paperweight-userdev i kompilować NMS.
-    // Dlatego domyślnie nie odpalamy testów Gradle (żeby build JAR działał przewidywalnie).
-    enabled = false
+    // Testy jednostkowe Gradle włączone (tylko null safety, logika)
+    enabled = true
 
     useJUnitPlatform {
         // Tak samo jak w Maven (Surefire): integracyjne są w osobnym kroku.

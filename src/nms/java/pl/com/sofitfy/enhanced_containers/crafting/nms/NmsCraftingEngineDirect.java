@@ -131,6 +131,88 @@ public class NmsCraftingEngineDirect {
         return bukkitResult;
     }
 
+    /**
+     * Zwraca remainder items (container items) dla danego gridu po scraftowaniu.
+     * 
+     * Przykłady vanilla remainder items:
+     * - MILK_BUCKET → BUCKET (po scraftowaniu ciasta)
+     * - HONEY_BOTTLE → GLASS_BOTTLE (po scraftowaniu honey block)
+     * - WATER_BUCKET → BUCKET (po scraftowaniu betonu)
+     * - LAVA_BUCKET → BUCKET
+     * - POWDER_SNOW_BUCKET → BUCKET
+     * 
+     * W NMS każdy Item ma metodę getCraftingRemainingItem() która zwraca co zostaje.
+     * Wstawiamy remainder items z powrotem do gridu w te same sloty gdzie były oryginalne składniki.
+     * 
+     * @param matrix Siatka 3x3 PRZED scraftowaniem (oryginalne składniki)
+     * @param bukkitWorld Świat Bukkit (potrzebny do konwersji NMS)
+     * @return Tablica 9 elementów z remainder items (null = nic nie zostaje w tym slocie)
+     */
+    public ItemStack[] getRemainingItems(ItemStack[] matrix, World bukkitWorld) {
+        if (matrix == null) {
+            throw new IllegalArgumentException("matrix must not be null");
+        }
+        if (matrix.length != 9) {
+            throw new IllegalArgumentException("matrix must be length 9");
+        }
+        if (!(bukkitWorld instanceof CraftWorld craftWorld)) {
+            // MockBukkit / testy jednostkowe: zwracamy pustą tablicę
+            return new ItemStack[9];
+        }
+
+        ServerLevel level = craftWorld.getHandle();
+        CraftingContainer container = create3x3Container();
+        
+        // Wypełnij container NMS itemami
+        for (int i = 0; i < 9; i++) {
+            ItemStack bukkit = matrix[i];
+            net.minecraft.world.item.ItemStack nms = (bukkit == null || bukkit.getType().isAir())
+                ? net.minecraft.world.item.ItemStack.EMPTY
+                : CraftItemStack.asNMSCopy(bukkit);
+            container.setItem(i, nms);
+        }
+
+        // Szukamy receptury która pasuje
+        Optional<RecipeHolder<CraftingRecipe>> recipe = level.getServer().getRecipeManager().getRecipeFor(
+            RecipeType.CRAFTING,
+            container.asCraftInput(),
+            level
+        );
+
+        if (recipe.isEmpty()) {
+            // Brak receptury = brak remainder items
+            System.out.println("[NMS DEBUG] Brak receptury dla gridu: " + java.util.Arrays.toString(matrix));
+            return new ItemStack[9];
+        }
+
+        System.out.println("[NMS DEBUG] Znaleziono recepturę: " + recipe.get().id());
+        
+        // getRemainingItems() zwraca co zostaje w gridzie po scraftowaniu
+        // To jest kluczowa metoda NMS do obsługi container items
+        net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> remainingNms = 
+            recipe.get().value().getRemainingItems(container.asCraftInput());
+
+        System.out.println("[NMS DEBUG] getRemainingItems() zwróciło: " + remainingNms.size() + " elementów");
+        for (int i = 0; i < remainingNms.size(); i++) {
+            net.minecraft.world.item.ItemStack nmsItem = remainingNms.get(i);
+            System.out.println("[NMS DEBUG]   Slot " + i + ": " + (nmsItem == null ? "null" : nmsItem.isEmpty() ? "EMPTY" : nmsItem.toString()));
+        }
+
+        // Konwertuj z NMS do Bukkit
+        ItemStack[] remainingBukkit = new ItemStack[9];
+        for (int i = 0; i < 9 && i < remainingNms.size(); i++) {
+            net.minecraft.world.item.ItemStack nmsItem = remainingNms.get(i);
+            if (nmsItem == null || nmsItem.isEmpty()) {
+                remainingBukkit[i] = null;
+            } else {
+                remainingBukkit[i] = CraftItemStack.asBukkitCopy(nmsItem);
+            }
+        }
+
+        System.out.println("[NMS DEBUG] Zwracam remainder items (Bukkit): " + java.util.Arrays.toString(remainingBukkit));
+        return remainingBukkit;
+    }
+
     private CraftingContainer create3x3Container() {
         AbstractContainerMenu dummy = new AbstractContainerMenu(null, -1) {
             @Override
@@ -150,5 +232,69 @@ public class NmsCraftingEngineDirect {
         };
 
         return new TransientCraftingContainer(dummy, 3, 3);
+    }
+    
+    /**
+     * Pobiera remainder item (container item) dla pojedynczego ItemStack.
+     * 
+     * W Minecraft NMS remainder items są zdefiniowane statycznie dla każdego Item typu:
+     * - Items.MILK_BUCKET ma craftingRemainingItem = Items.BUCKET
+     * - Items.WATER_BUCKET ma craftingRemainingItem = Items.BUCKET
+     * - Items.LAVA_BUCKET ma craftingRemainingItem = Items.BUCKET
+     * - Items.HONEY_BOTTLE ma craftingRemainingItem = Items.GLASS_BOTTLE
+     * 
+     * To jest prywatne pole w klasie Item, ale możemy je odczytać przez refleksję
+     * lub sprawdzić używając CraftingRecipe.getRemainingItems().
+     * 
+     * Tutaj używamy prostszego podejścia: tworzymy 1x1 grid i wywołujemy vanilla logic.
+     * 
+     * @param itemStack ItemStack do sprawdzenia
+     * @return remainder item lub null jeśli brak
+     */
+    public ItemStack getCraftingRemainder(ItemStack itemStack) {
+        if (itemStack == null || itemStack.getType().isAir()) {
+            return null;
+        }
+        
+        // Konwertuj Bukkit → NMS
+        net.minecraft.world.item.ItemStack nmsItem = CraftItemStack.asNMSCopy(itemStack);
+        if (nmsItem == null || nmsItem.isEmpty()) {
+            return null;
+        }
+        
+        try {
+            // Pobierz Item z NMS ItemStack
+            net.minecraft.world.item.Item item = nmsItem.getItem();
+            if (item == null) {
+                return null;
+            }
+            
+            // Użyj refleksji aby odczytać prywatne pole 'craftingRemainingItem'
+            // W Mojang mappings: private @Nullable Item craftingRemainingItem
+            java.lang.reflect.Field field = net.minecraft.world.item.Item.class.getDeclaredField("craftingRemainingItem");
+            field.setAccessible(true);
+            net.minecraft.world.item.Item remainderItem = (net.minecraft.world.item.Item) field.get(item);
+            
+            if (remainderItem == null) {
+                return null;
+            }
+            
+            // Utwórz ItemStack z remainder item (domyślna ilość: 1)
+            net.minecraft.world.item.ItemStack remainingNms = new net.minecraft.world.item.ItemStack(remainderItem);
+            if (remainingNms.isEmpty()) {
+                return null;
+            }
+            
+            // Konwertuj NMS → Bukkit
+            ItemStack bukkitRemaining = CraftItemStack.asBukkitCopy(remainingNms);
+            if (bukkitRemaining == null || bukkitRemaining.getType().isAir()) {
+                return null;
+            }
+            
+            return bukkitRemaining;
+        } catch (Exception e) {
+            // Refleksja nie zadziałała (może zmieniona nazwa pola w innej wersji?)
+            return null;
+        }
     }
 }

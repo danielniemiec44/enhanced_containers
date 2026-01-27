@@ -1,6 +1,7 @@
 package pl.com.sofitfy.enhanced_containers.crafting.gui;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -12,6 +13,7 @@ import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.plugin.java.JavaPlugin;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.CraftingRecipe;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.PatternMatchResult;
@@ -25,6 +27,7 @@ import pl.com.sofitfy.enhanced_containers.crafting.suggestions.CraftingSuggestio
 import pl.com.sofitfy.enhanced_containers.crafting.suggestions.NmsVanillaSuggestion;
 import pl.com.sofitfy.enhanced_containers.crafting.suggestions.NmsVanillaSuggestionEngine;
 import pl.com.sofitfy.enhanced_containers.crafting.vanilla.VanillaCraftingSimulator;
+import pl.com.sofitfy.enhanced_containers.crafting.nms.NmsCraftingEngine;
 
 import java.util.*;
 
@@ -116,6 +119,8 @@ public class CraftingGUIListener implements Listener {
     // Wyrejestruj GUI gracza (np gdy go zamyka)
     public void unregisterGUI(UUID playerId) {
         activeGUIs.remove(playerId);
+        vanillaSimulators.remove(playerId);
+        suggestionsByPlayer.remove(playerId);
     }
 
     // Słucha kiedy gracz klika w okienko
@@ -147,6 +152,14 @@ public class CraftingGUIListener implements Listener {
             return;
         }
 
+        // KRYTYCZNE: Zablokuj Bukkitowe "collect to cursor" (double-click), bo potrafi
+        // zebrać itemy także z górnego inventory (w tym output slot) mimo że klik jest w dole.
+        // To jest typowy wektor duplikacji / "free craft" przy szybkim klikaniu.
+        if (event.getAction() == InventoryAction.COLLECT_TO_CURSOR || event.getClick() == ClickType.DOUBLE_CLICK) {
+            event.setCancelled(true);
+            return;
+        }
+
         int slot = event.getRawSlot();
         int topSize = topInventory.getSize();
 
@@ -166,6 +179,7 @@ public class CraftingGUIListener implements Listener {
             if (event.getClickedInventory() == null) {
                 return;
             }
+            
             InventoryAction action = event.getAction();
 
             // Shift+click z ekwipunku - wkładaj przedmioty do gridu
@@ -196,8 +210,8 @@ public class CraftingGUIListener implements Listener {
                 return;
             }
 
-            // Pozostałe akcje w ekwipunku gracza - pozwalamy normalnie,
-            // ale odświeżamy podpowiedzi (bo zmienia się zawartość ekwipunku).
+            // Pozostałe akcje w ekwipunku gracza - pozwalamy normalnie
+            // Po każdej zmianie odświeżamy output i podpowiedzi.
             runNextTickIfPossible(() -> updateOutput(player, gui));
             return;
         }
@@ -257,9 +271,9 @@ public class CraftingGUIListener implements Listener {
             // ========== OPERACJA 2: NORMALNY CLICK - ZABRANIE ITEMU ==========
             ClickType clickType = event.getClick();
             if (clickType == ClickType.LEFT || clickType == ClickType.RIGHT) {
-                // Ważne: w vanilla workbench można klikać wynik wielokrotnie.
-                // Jeśli na kursorze jest TEN SAM item, to dokładamy wynik do stacka.
-                // Jeśli na kursorze jest inny item, to traktujemy to jak próbę swapu i blokujemy.
+                // Vanilla workbench pozwala na wielokrotne klikanie output slotu (addytywne stackowanie).
+                // Jeśli gracz ma TEN SAM item na kursorze, dodajemy więcej.
+                // Jeśli gracz ma INNY item, blokujemy (nie można swapować).
 
                 ItemStack cursor = event.getCursor();
                 if (cursor != null && !cursor.getType().isAir()) {
@@ -321,6 +335,13 @@ public class CraftingGUIListener implements Listener {
 
         // Sprawdź czy to nasze GUI
         if (gui == null || topInventory == null || !topInventory.equals(gui.getInventory())) {
+            return;
+        }
+
+        // W creative również blokujemy "collect to cursor" / double-click, aby nie dało się
+        // zebrać itemów z górnego inventory (w tym output) do kursora.
+        if (event.getAction() == InventoryAction.COLLECT_TO_CURSOR || event.getClick() == ClickType.DOUBLE_CLICK) {
+            event.setCancelled(true);
             return;
         }
 
@@ -848,6 +869,28 @@ public class CraftingGUIListener implements Listener {
 
         // Wyodrębni przedmioty z gridu
         ItemStack[] gridItems = extractGridItems(gui);
+        
+        // DEBUG: Wyświetl pełny grid 4x4
+        plugin.getLogger().info("[DEBUG] Pełny grid 4x4 przed kopiowaniem:");
+        for (int row = 0; row < 4; row++) {
+            StringBuilder sb = new StringBuilder("  Row " + row + ": ");
+            for (int col = 0; col < 4; col++) {
+                ItemStack item = gridItems[row * 4 + col];
+                if (item == null || item.getType().isAir()) {
+                    sb.append("[AIR] ");
+                } else {
+                    sb.append("[").append(item.getType()).append(" x").append(item.getAmount()).append("] ");
+                }
+            }
+            plugin.getLogger().info(sb.toString());
+        }
+        
+        // Zapisz grid PRZED jakimkolwiek usunięciem składników (dla remainder items)
+        // WAŻNE: Musi być DEEP COPY bo removeItemsFromMatch modyfikuje ItemStack'i in-place
+        ItemStack[] gridBeforeCrafting = new ItemStack[gridItems.length];
+        for (int i = 0; i < gridItems.length; i++) {
+            gridBeforeCrafting[i] = gridItems[i] != null ? gridItems[i].clone() : null;
+        }
 
         // Znajdź recepturę która pasuje - najpierw custom
         for (CraftingRecipe recipe : manager.getAllRecipes()) {
@@ -868,11 +911,11 @@ public class CraftingGUIListener implements Listener {
             // Znaleźliśmy recepturę! RĘCZNIE obsługujemy pickup:
             
             // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
-            // Uwaga: w anulowanych eventach bezpieczniej ustawić to przez event (lepsza synchronizacja klienta).
+            // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
+            // Nie wolno ustawiać player.setItemOnCursor() bo spowoduje duplikację.
             if (event != null) {
                 event.setCursor(newCursor);
             }
-            player.setItemOnCursor(newCursor);
             
             // 2. Wyczyść output slot
             gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
@@ -884,9 +927,14 @@ public class CraftingGUIListener implements Listener {
             
             // 3. Usuń składniki z gridu
             RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
+            
+            // 4. Aplikuj remainder items (container items) - custom receptury też obsługują remainder items
+            applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+            
+            // 5. Zaktualizuj grid w GUI
             updateGridSlots(gui, gridItems);
             
-            // 4. Zaktualizuj output dla następnego craftu
+            // 6. Zaktualizuj output dla następnego craftu
             updateOutput(player, gui);
 
             // 5. Dla pewności: odśwież klienta (w anulowanych eventach potrafi się rozjechać UI)
@@ -915,10 +963,10 @@ public class CraftingGUIListener implements Listener {
                 // Znaleźliśmy vanilla shaped recepturę! RĘCZNIE obsługujemy pickup:
                 
                 // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
+                // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
                 if (event != null) {
                     event.setCursor(newCursor);
                 }
-                player.setItemOnCursor(newCursor);
                 
                 // 2. Wyczyść output slot
                 gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
@@ -928,12 +976,17 @@ public class CraftingGUIListener implements Listener {
                 
                 // 3. Usuń składniki z gridu
                 RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
+                
+                // 5. Aplikuj remainder items (container items) z vanilla receptur
+                applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+                
+                // 6. Zaktualizuj grid w GUI
                 updateGridSlots(gui, gridItems);
                 
-                // 4. Zaktualizuj output dla następnego craftu
+                // 7. Zaktualizuj output dla następnego craftu
                 updateOutput(player, gui);
 
-                // 5. Sync UI
+                // 7. Sync UI
                 runNextTickIfPossible(player::updateInventory);
                 
                 return;
@@ -949,13 +1002,13 @@ public class CraftingGUIListener implements Listener {
                     continue;
                 }
 
-                // Znaleźliśmy vanilla shapeless recepturę! RĘCZNIE obsługujemy pickup:
+                // Znaleziono vanilla shapeless recepturę! RĘCZNIE obsługujemy pickup:
                 
                 // 1. Daj graczowi output na kursor (lub dołóż do istniejącego stacka)
+                // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
                 if (event != null) {
                     event.setCursor(newCursor);
                 }
-                player.setItemOnCursor(newCursor);
                 
                 // 2. Wyczyść output slot
                 gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
@@ -965,12 +1018,17 @@ public class CraftingGUIListener implements Listener {
                 
                 // 3. Usuń składniki z gridu
                 RecipeMatcher.removeShapelessItems(gridItems, ingredients);
+                
+                // 4. Aplikuj remainder items (container items) z vanilla receptur
+                applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+                
+                // 5. Zaktualizuj grid w GUI
                 updateGridSlots(gui, gridItems);
                 
-                // 4. Zaktualizuj output dla następnego craftu
+                // 6. Zaktualizuj output dla następnego craftu
                 updateOutput(player, gui);
 
-                // 5. Sync UI
+                // 7. Sync UI
                 runNextTickIfPossible(player::updateInventory);
                 
                 return;
@@ -982,10 +1040,10 @@ public class CraftingGUIListener implements Listener {
         // To eliminuje przypadki, gdzie output istnieje, ale kliknięcie/zużycie mówi "nie da się".
         ItemStack simulated = tryVanillaCrafting4x4Fallback(player, gridItems);
         if (simulated != null && simulated.getAmount() == output.getAmount() && simulated.isSimilar(output)) {
+            // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
             if (event != null) {
                 event.setCursor(newCursor);
             }
-            player.setItemOnCursor(newCursor);
 
             gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
             if (event != null) {
@@ -993,6 +1051,10 @@ public class CraftingGUIListener implements Listener {
             }
 
             consumeAllOccupiedOnce(gridItems);
+            
+            // Aplikuj remainder items (container items) z vanilla receptur
+            applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+            
             updateGridSlots(gui, gridItems);
             updateOutput(player, gui);
             runNextTickIfPossible(player::updateInventory);
@@ -1002,10 +1064,10 @@ public class CraftingGUIListener implements Listener {
         // Żadna receptura nie pasowała - nie powinno się zdarzyć
         // (output był tam bo receptura pasowała wcześniej)
         // Bezpieczna fallback: daj graczowi output bez usuwania składników
+        // WAŻNE: Używamy TYLKO event.setCursor() gdy event jest anulowany!
         if (event != null) {
             event.setCursor(newCursor);
         }
-        player.setItemOnCursor(newCursor);
         gui.getInventory().setItem(CraftingGUI.OUTPUT_SLOT, null);
         if (event != null) {
             event.setCurrentItem(null);
@@ -1098,6 +1160,13 @@ public class CraftingGUIListener implements Listener {
 
         // Wyodrębni przedmioty z gridu
         ItemStack[] gridItems = extractGridItems(gui);
+        
+        // Zapisz grid PRZED jakimkolwiek usunięciem składników (dla remainder items z vanilla receptur)
+        // WAŻNE: Musi być DEEP COPY bo removeItemsFromMatch modyfikuje ItemStack'i in-place
+        ItemStack[] gridBeforeCrafting = new ItemStack[gridItems.length];
+        for (int i = 0; i < gridItems.length; i++) {
+            gridBeforeCrafting[i] = gridItems[i] != null ? gridItems[i].clone() : null;
+        }
 
         // Spróbuj znaleźć recepturę która pasuje i usuń jej składniki
         // Najpierw custom receptury
@@ -1126,6 +1195,9 @@ public class CraftingGUIListener implements Listener {
 
             // Znaleźliśmy recepturę! Usuń jej składniki z input slotów
             RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
+            
+            // Aplikuj remainder items (container items) - custom receptury też obsługują remainder items
+            applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
 
             // Zaktualizuj sloty w okienku
             updateGridSlots(gui, gridItems);
@@ -1156,7 +1228,11 @@ public class CraftingGUIListener implements Listener {
                 }
 
                 // Znaleźliśmy vanilla shaped recepturę! Usuń jej składniki
+                
                 RecipeMatcher.removeItemsFromMatch(gridItems, matchResult);
+                
+                // Aplikuj remainder items (container items) z vanilla receptur
+                applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
 
                 // Zaktualizuj sloty w okienku
                 updateGridSlots(gui, gridItems);
@@ -1179,7 +1255,11 @@ public class CraftingGUIListener implements Listener {
                 }
 
                 // Znaleźliśmy vanilla shapeless recepturę! Usuń jej składniki
+                
                 RecipeMatcher.removeShapelessItems(gridItems, ingredients);
+                
+                // Aplikuj remainder items (container items) z vanilla receptur
+                applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
 
                 // Skopiuj zmodyfikowany grid z powrotem do okienka
                 updateGridSlots(gui, gridItems);
@@ -1196,6 +1276,10 @@ public class CraftingGUIListener implements Listener {
         ItemStack simulated = tryVanillaCrafting4x4Fallback(player, gridItems);
         if (simulated != null) {
             consumeAllOccupiedOnce(gridItems);
+            
+            // Aplikuj remainder items (container items) z vanilla receptur
+            applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+            
             updateGridSlots(gui, gridItems);
             updateOutput(player, gui);
         }
@@ -1336,7 +1420,19 @@ public class CraftingGUIListener implements Listener {
                         }
 
                         addItemToPlayerOrDrop(player, expected.clone());
+                        
+                        // Zapisz grid PRZED zużyciem składników (do remainder items)
+                        // WAŻNE: Musi być DEEP COPY bo consumeAllOccupiedOnce modyfikuje ItemStack'i in-place
+                        ItemStack[] gridBeforeCrafting = new ItemStack[currentGrid.length];
+                        for (int i = 0; i < currentGrid.length; i++) {
+                            gridBeforeCrafting[i] = currentGrid[i] != null ? currentGrid[i].clone() : null;
+                        }
+                        
                         consumeAllOccupiedOnce(currentGrid);
+                        
+                        // Aplikuj remainder items (container items) z vanilla receptur
+                        applyRemainingItemsToGrid(gridBeforeCrafting, currentGrid, player);
+                        
                         updateGridSlots(gui, currentGrid);
                         crafted++;
                         craftedThisTick++;
@@ -1637,7 +1733,26 @@ public class CraftingGUIListener implements Listener {
      * @param grid 4x4 grid z craftingu
      * @return 3x3 array (9 elementów)
      */
-    private ItemStack[] extract3x3Grid(ItemStack[] grid) {
+    /**
+     * Helper class do przechowywania wyniku ekstrakcji 3x3 z 4x4 z informacją o bounding box.
+     */
+    private static class BoundingBoxResult {
+        final ItemStack[] grid3x3;
+        final int minRow;
+        final int minCol;
+        final int width;
+        final int height;
+        
+        BoundingBoxResult(ItemStack[] grid3x3, int minRow, int minCol, int width, int height) {
+            this.grid3x3 = grid3x3;
+            this.minRow = minRow;
+            this.minCol = minCol;
+            this.width = width;
+            this.height = height;
+        }
+    }
+    
+    static ItemStack[] extract3x3Grid(ItemStack[] grid) {
         ItemStack[] grid3x3 = new ItemStack[9];
         
         // Bierz tylko 3 pierwsze kolumny z 3 pierwszych rzędów
@@ -1666,7 +1781,7 @@ public class CraftingGUIListener implements Listener {
      * Jeśli bounding box ma szerokość/wysokość <= 3, kopiujemy go do 3x3 (od (0,0)).
      * Dzięki temu vanilla działa niezależnie od pozycji w GUI 4x4.
      */
-    private ItemStack[] extractVanilla3x3GridFrom4x4(ItemStack[] grid4x4) {
+    private BoundingBoxResult extractVanilla3x3GridFrom4x4WithBounds(ItemStack[] grid4x4) {
         if (grid4x4 == null || grid4x4.length != 16) {
             return null;
         }
@@ -1691,7 +1806,7 @@ public class CraftingGUIListener implements Listener {
 
         // Pusto
         if (maxRow == -1) {
-            return new ItemStack[9];
+            return new BoundingBoxResult(new ItemStack[9], 0, 0, 0, 0);
         }
 
         int height = maxRow - minRow + 1;
@@ -1711,7 +1826,15 @@ public class CraftingGUIListener implements Listener {
             }
         }
 
-        return grid3x3;
+        return new BoundingBoxResult(grid3x3, minRow, minCol, width, height);
+    }
+    
+    /**
+     * Wrapper dla kompatybilności - zwraca tylko grid3x3 bez bounding box.
+     */
+    private ItemStack[] extractVanilla3x3GridFrom4x4(ItemStack[] grid4x4) {
+        BoundingBoxResult result = extractVanilla3x3GridFrom4x4WithBounds(grid4x4);
+        return result != null ? result.grid3x3 : null;
     }
 
     /**
@@ -1777,6 +1900,149 @@ public class CraftingGUIListener implements Listener {
     }
 
     /**
+     * Aplikuje "remainder items" (container items) do gridu po craftingu.
+     * 
+     * Przykłady remainder items:
+     * - MILK_BUCKET → BUCKET (po scraftowaniu ciasta z 3x mleko, zostają 3x puste wiadra)
+     * - HONEY_BOTTLE → GLASS_BOTTLE (po scraftowaniu honey block, zostają puste butelki)
+     * - WATER_BUCKET → BUCKET
+     * - LAVA_BUCKET → BUCKET
+     * - POWDER_SNOW_BUCKET → BUCKET
+     * 
+     * Ta metoda sprawdza każdy item indywidualnie używając NMS Item.getCraftingRemainingItem()
+     * aby znaleźć remainder items. Działa dla wszystkich receptur (vanilla i custom).
+     * 
+     * @param gridBeforeCrafting Grid 4x4 PRZED wykonaniem craftingu
+     * @param gridItems Tablica 4x4 do modyfikacji (grid PO craftingu)
+     * @param player Gracz craftujący
+     */
+    private void applyRemainingItemsToGrid(ItemStack[] gridBeforeCrafting, ItemStack[] gridItems, Player player) {
+        if (gridBeforeCrafting == null || gridItems == null || player == null) {
+            return;
+        }
+        
+        if (gridBeforeCrafting.length != 16 || gridItems.length != 16) {
+            plugin.getLogger().warning("applyRemainingItemsToGrid: grids must be 4x4 (length 16), got: " + gridBeforeCrafting.length + " and " + gridItems.length);
+            return;
+        }
+        
+        // DEBUG: Wyświetl gridBeforeCrafting w applyRemainingItemsToGrid
+        plugin.getLogger().info("[DEBUG] gridBeforeCrafting w applyRemainingItemsToGrid:");
+        for (int row = 0; row < 4; row++) {
+            StringBuilder sb = new StringBuilder("  Row " + row + ": ");
+            for (int col = 0; col < 4; col++) {
+                ItemStack item = gridBeforeCrafting[row * 4 + col];
+                if (item == null || item.getType().isAir()) {
+                    sb.append("[AIR] ");
+                } else {
+                    sb.append("[").append(item.getType()).append(" x").append(item.getAmount()).append("] ");
+                }
+            }
+            plugin.getLogger().info(sb.toString());
+        }
+        
+        // Sprawdź każdy slot indywidualnie używając NMS aby znaleźć remainder items
+        NmsCraftingEngine engine = new NmsCraftingEngine();
+        int appliedCount = 0;
+        
+        for (int i = 0; i < 16; i++) {
+            ItemStack itemBefore = gridBeforeCrafting[i];
+            
+            // Jeśli slot był pusty PRZED craftingiem, lub jest już zajęty PO craftingu, pomiń
+            if (itemBefore == null || itemBefore.getType().isAir()) {
+                continue;
+            }
+            
+            // Sprawdź czy item ma remainder item (np. MILK_BUCKET → BUCKET)
+            ItemStack remainder = engine.getCraftingRemainder(itemBefore);
+            if (remainder != null && remainder.getType() != Material.AIR) {
+                // Jeśli slot PO craftingu jest pusty, wstaw remainder item
+                ItemStack itemAfter = gridItems[i];
+                if (itemAfter == null || itemAfter.getType().isAir()) {
+                    gridItems[i] = remainder;
+                    appliedCount++;
+                    plugin.getLogger().info("[DEBUG] Aplikowano remainder item: " + remainder + " do slotu 4x4[" + i + "]");
+                }
+            }
+        }
+        
+        plugin.getLogger().info("[DEBUG] Łącznie aplikowano " + appliedCount + " remainder items");
+    }
+    
+    /**
+     * Publiczny wrapper dla applyRemainingItemsToGrid - używany przez ShiftClickAsyncTask.
+     * 
+     * @param gridBeforeCrafting Grid 4x4 PRZED wykonaniem craftingu
+     * @param gridItems Tablica 4x4 do modyfikacji (grid PO craftingu)
+     * @param player Gracz craftujący
+     */
+    public void applyRemainingItemsToGridPublic(ItemStack[] gridBeforeCrafting, ItemStack[] gridItems, Player player) {
+        applyRemainingItemsToGrid(gridBeforeCrafting, gridItems, player);
+    }
+    
+    /**
+     * Sprawdza czy item można dodać do ekwipunku gracza (symulacja bez faktycznego dodawania).
+     * 
+     * Działa identycznie jak vanilla workbench:
+     * - Stackowalne itemy łączą się z istniejącymi
+     * - Sprawdza wolne sloty w main inventory + hotbar
+     * - NIE sprawdza armor slots ani offhand
+     * 
+     * @param player Gracz
+     * @param item Item do sprawdzenia
+     * @return true jeśli item się zmieści, false jeśli EQ pełne
+     */
+    public static boolean canAddToInventory(Player player, ItemStack item) {
+        return canAddToInventory(player, item, 0);
+    }
+    
+    /**
+     * Sprawdza czy item można dodać do ekwipunku gracza, uwzględniając już zaplanowane do dodania itemy.
+     * 
+     * @param player Gracz
+     * @param item Item do sprawdzenia
+     * @param alreadyPlannedCount Ile takich samych itemów już zaplanowano do dodania (w async pętli)
+     * @return true jeśli item się zmieści, false jeśli EQ pełne
+     */
+    public static boolean canAddToInventory(Player player, ItemStack item, int alreadyPlannedCount) {
+        if (player == null || item == null || item.getType().isAir()) {
+            return true;
+        }
+        
+        PlayerInventory inv = player.getInventory();
+        int remainingAmount = item.getAmount() * (alreadyPlannedCount + 1); // +1 bo sprawdzamy czy zmieści się kolejny
+        int maxStackSize = item.getMaxStackSize();
+        
+        // Sprawdź czy można dodać do istniejących stacków (slots 0-35: hotbar + main inventory)
+        for (int i = 0; i < 36; i++) {
+            ItemStack slot = inv.getItem(i);
+            
+            if (slot == null || slot.getType().isAir()) {
+                // Pusty slot - może pomieścić cały stack
+                remainingAmount -= maxStackSize;
+                if (remainingAmount <= 0) {
+                    return true;
+                }
+                continue;
+            }
+            
+            // Sprawdź czy można stackować
+            if (slot.isSimilar(item)) {
+                int spaceInSlot = maxStackSize - slot.getAmount();
+                if (spaceInSlot > 0) {
+                    remainingAmount -= spaceInSlot;
+                    if (remainingAmount <= 0) {
+                        return true; // Cały item się zmieścił w istniejących stackach
+                    }
+                }
+            }
+        }
+        
+        // Nie zmieścił się - EQ pełne
+        return false;
+    }
+    
+    /**
      * Czyści simulatory gdy gracz zamyka GUI lub opuszcza serwer.
      */
     public void cleanupPlayer(UUID playerId) {
@@ -1784,5 +2050,3 @@ public class CraftingGUIListener implements Listener {
         vanillaSimulators.remove(playerId);
     }
 }
-
-
