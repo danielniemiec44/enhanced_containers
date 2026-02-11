@@ -314,7 +314,6 @@ public class VanillaCraftingSimulator {
         resultMeta.setColor(Color.fromRGB(avgRed, avgGreen, avgBlue));
         result.setItemMeta(resultMeta);
 
-        System.out.println("[DyeDebug] SUKCES! (VanillaCraftingSimulator) Barwię " + armor.getType() + " na RGB(" + avgRed + "," + avgGreen + "," + avgBlue + ")");
         return result;
     }
 
@@ -420,7 +419,6 @@ public class VanillaCraftingSimulator {
             result.setItemMeta(resultMeta);
         }
 
-        System.out.println("[RepairDebug] SUKCES! (VanillaCraftingSimulator) Naprawiam " + first.getType() + ". Nowy damage: " + newDamage);
         return result;
     }
 
@@ -433,7 +431,6 @@ public class VanillaCraftingSimulator {
         boolean secondHasName = second.hasItemMeta() && second.getItemMeta() != null && second.getItemMeta().hasDisplayName();
 
         if (firstHasName != secondHasName) {
-            System.out.println("[RepairDebug] (VanillaCraftingSimulator) Jeden item ma nazwę, drugi nie -> brak naprawy");
             return false;
         }
 
@@ -441,7 +438,6 @@ public class VanillaCraftingSimulator {
             String name1 = first.getItemMeta().getDisplayName();
             String name2 = second.getItemMeta().getDisplayName();
             if (name1 == null ? name2 != null : !name1.equals(name2)) {
-                System.out.println("[RepairDebug] (VanillaCraftingSimulator) Różne nazwy -> brak naprawy");
                 return false;
             }
         }
@@ -449,7 +445,6 @@ public class VanillaCraftingSimulator {
         Map<?, ?> ench1 = first.getEnchantments();
         Map<?, ?> ench2 = second.getEnchantments();
         if (ench1 == null ? ench2 != null : !ench1.equals(ench2)) {
-            System.out.println("[RepairDebug] (VanillaCraftingSimulator) Różne enchanty -> brak naprawy");
             return false;
         }
 

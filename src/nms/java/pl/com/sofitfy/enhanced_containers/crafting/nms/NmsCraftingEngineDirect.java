@@ -181,22 +181,13 @@ public class NmsCraftingEngineDirect {
 
         if (recipe.isEmpty()) {
             // Brak receptury = brak remainder items
-            System.out.println("[NMS DEBUG] Brak receptury dla gridu: " + java.util.Arrays.toString(matrix));
             return new ItemStack[9];
         }
 
-        System.out.println("[NMS DEBUG] Znaleziono recepturę: " + recipe.get().id());
-        
         // getRemainingItems() zwraca co zostaje w gridzie po scraftowaniu
         // To jest kluczowa metoda NMS do obsługi container items
         net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> remainingNms = 
             recipe.get().value().getRemainingItems(container.asCraftInput());
-
-        System.out.println("[NMS DEBUG] getRemainingItems() zwróciło: " + remainingNms.size() + " elementów");
-        for (int i = 0; i < remainingNms.size(); i++) {
-            net.minecraft.world.item.ItemStack nmsItem = remainingNms.get(i);
-            System.out.println("[NMS DEBUG]   Slot " + i + ": " + (nmsItem == null ? "null" : nmsItem.isEmpty() ? "EMPTY" : nmsItem.toString()));
-        }
 
         // Konwertuj z NMS do Bukkit
         ItemStack[] remainingBukkit = new ItemStack[9];
@@ -209,7 +200,6 @@ public class NmsCraftingEngineDirect {
             }
         }
 
-        System.out.println("[NMS DEBUG] Zwracam remainder items (Bukkit): " + java.util.Arrays.toString(remainingBukkit));
         return remainingBukkit;
     }
 

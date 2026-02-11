@@ -1,0 +1,31 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/arrow"
+  },
+  "overrides": [
+    { "predicate": { "custom_model_data": 200 }, "model": "enhanced_containers:item/arrow_empty" },
+    { "predicate": { "custom_model_data": 201 }, "model": "enhanced_containers:item/arrow_1" },
+    { "predicate": { "custom_model_data": 202 }, "model": "enhanced_containers:item/arrow_2" },
+    { "predicate": { "custom_model_data": 203 }, "model": "enhanced_containers:item/arrow_3" },
+    { "predicate": { "custom_model_data": 204 }, "model": "enhanced_containers:item/arrow_4" },
+    { "predicate": { "custom_model_data": 205 }, "model": "enhanced_containers:item/arrow_5" },
+    { "predicate": { "custom_model_data": 206 }, "model": "enhanced_containers:item/arrow_6" },
+    { "predicate": { "custom_model_data": 207 }, "model": "enhanced_containers:item/arrow_7" },
+    { "predicate": { "custom_model_data": 208 }, "model": "enhanced_containers:item/arrow_8" },
+    { "predicate": { "custom_model_data": 209 }, "model": "enhanced_containers:item/arrow_9" },
+    { "predicate": { "custom_model_data": 210 }, "model": "enhanced_containers:item/arrow_10" },
+    { "predicate": { "custom_model_data": 211 }, "model": "enhanced_containers:item/arrow_11" },
+    { "predicate": { "custom_model_data": 212 }, "model": "enhanced_containers:item/arrow_12" },
+    { "predicate": { "custom_model_data": 213 }, "model": "enhanced_containers:item/arrow_13" },
+    { "predicate": { "custom_model_data": 214 }, "model": "enhanced_containers:item/arrow_14" },
+    { "predicate": { "custom_model_data": 215 }, "model": "enhanced_containers:item/arrow_15" },
+    { "predicate": { "custom_model_data": 216 }, "model": "enhanced_containers:item/arrow_16" },
+    { "predicate": { "custom_model_data": 217 }, "model": "enhanced_containers:item/arrow_17" },
+    { "predicate": { "custom_model_data": 218 }, "model": "enhanced_containers:item/arrow_18" },
+    { "predicate": { "custom_model_data": 219 }, "model": "enhanced_containers:item/arrow_19" },
+    { "predicate": { "custom_model_data": 220 }, "model": "enhanced_containers:item/arrow_20" },
+    { "predicate": { "custom_model_data": 221 }, "model": "enhanced_containers:item/arrow_21" },
+    { "predicate": { "custom_model_data": 222 }, "model": "enhanced_containers:item/arrow_22" }
+  ]
+}

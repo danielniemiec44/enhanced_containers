@@ -2,8 +2,12 @@ name: PlethorasExtendedTools
 main: pl.com.sofitfy.enhanced_containers.Main
 version: 2.1
 api-version: 1.21
-description: Custom 4x4 crafting and in-game recipe editor for Plethora's Network
+description: Plugin written by Daniel Niemiec (Softify) for Plethoras Network.
 author: DeeRave
+
+softdepend:
+  - WorldEdit
+  - FastAsyncWorldEdit
 
 commands:
   "4x4":
@@ -11,6 +15,16 @@ commands:
     permission: plethoras.tools.use
     aliases:
       - ecraft
+  efurnace:
+    description: Enhanced Furnace commands (give/fill)
+    permission: plethoras.furnace.give
+    aliases:
+      - enhancedfurnace
+  sharedcrafting:
+    description: Shared Crafting commands (fill)
+    permission: plethoras.sharedcrafting.fill
+    aliases:
+      - scrafting
 
 permissions:
   plethoras.tools.use:
@@ -20,8 +34,14 @@ permissions:
     description: Allows creating and editing recipes in-game
     default: op
   plethoras.tools.sign_item:
-    description: Allows using the /4x4 sign_item command to rename items
+    description: Allows using the sign_item command to rename items
     default: false
-
-
-
+  plethoras.furnace.give:
+    description: Allows using efurnace command to get enhanced furnaces
+    default: op
+  plethoras.furnace.fill:
+    description: Allows mass-filling enhanced furnaces in WorldEdit selection
+    default: op
+  plethoras.sharedcrafting.fill:
+    description: Allows mass-filling shared crafting tables in WorldEdit selection
+    default: op

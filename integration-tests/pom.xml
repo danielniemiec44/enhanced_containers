@@ -170,15 +170,35 @@
 
             <!--
               Budujemy plugin (jar) przed testami integracyjnymi.
-              Uwaga: -DskipTests żeby nie odpalać testów z głównego projektu.
+              UWAGA: Główny projekt używa Gradle z paperweight-userdev (wymaga NMS).
+              Maven nie może skompilować kodu NMS, więc musimy użyć Gradle.
+              Po zbudowaniu instalujemy JAR do lokalnego repo Maven.
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <executions>
+                    <!-- Krok 1: Buduj przez Gradle -->
                     <execution>
-                        <id>build-plugin-jar</id>
+                        <id>build-plugin-jar-gradle</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <workingDirectory>${project.basedir}/..</workingDirectory>
+                            <executable>./gradlew</executable>
+                            <arguments>
+                                <argument>build</argument>
+                                <argument>-x</argument>
+                                <argument>test</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <!-- Krok 2: Instaluj JAR do lokalnego Maven repo -->
+                    <execution>
+                        <id>install-jar-to-maven</id>
                         <phase>generate-test-resources</phase>
                         <goals>
                             <goal>exec</goal>
@@ -186,10 +206,12 @@
                         <configuration>
                             <executable>mvn</executable>
                             <arguments>
-                                <argument>-f</argument>
-                                <argument>../pom.xml</argument>
-                                <argument>-DskipTests</argument>
-                                <argument>install</argument>
+                                <argument>install:install-file</argument>
+                                <argument>-Dfile=${project.basedir}/../build/libs/enhanced_containers-unspecified.jar</argument>
+                                <argument>-DgroupId=pl.com.sofitfy.enhanced_containers</argument>
+                                <argument>-DartifactId=enhanced_containers</argument>
+                                <argument>-Dversion=1.0-SNAPSHOT</argument>
+                                <argument>-Dpackaging=jar</argument>
                             </arguments>
                         </configuration>
                     </execution>

@@ -348,7 +348,6 @@ public class RecipeSelectionListener implements Listener {
      * Usuń recepturę z config.yml
      */
     private boolean deleteRecipeFromConfig(String recipeId) {
-        System.out.println("[DELETE DEBUG] deleteRecipeFromConfig called with recipeId: " + recipeId);
         try {
             // Załaduj config BEZPOŚREDNIO z pliku (nie z ConfigManager cache)
             java.io.File configFile = new java.io.File(
@@ -356,11 +355,7 @@ public class RecipeSelectionListener implements Listener {
                 "config.yml"
             );
             
-            System.out.println("[DELETE DEBUG] Config file path: " + configFile.getAbsolutePath());
-            System.out.println("[DELETE DEBUG] Config file exists: " + configFile.exists());
-            
             if (!configFile.exists()) {
-                System.out.println("[DELETE DEBUG] Config file NOT FOUND!");
                 return false;
             }
             
@@ -368,10 +363,8 @@ public class RecipeSelectionListener implements Listener {
                 org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(configFile);
             
             java.util.List<?> recipesList = config.getList("crafting.recipes");
-            System.out.println("[DELETE DEBUG] Recipes list: " + (recipesList == null ? "NULL" : recipesList.size() + " recipes"));
             
             if (recipesList == null) {
-                System.out.println("[DELETE DEBUG] Recipes list is NULL!");
                 return false;
             }
             
@@ -379,7 +372,6 @@ public class RecipeSelectionListener implements Listener {
             java.util.List<Object> recipes = new java.util.ArrayList<>();
             int removedCount = 0;
             
-            System.out.println("[DELETE DEBUG] Searching for recipe ID: '" + recipeId + "'");
             for (int i = 0; i < recipesList.size(); i++) {
                 Object obj = recipesList.get(i);
                 if (obj instanceof java.util.Map) {
@@ -389,7 +381,6 @@ public class RecipeSelectionListener implements Listener {
                     
                     if (recipeId.equals(id)) {
                         removedCount++;
-                        System.out.println("[DELETE DEBUG] SKIPPING duplicate at index " + i + " with ID: '" + id + "'");
                     } else {
                         recipes.add(obj);
                     }
@@ -397,22 +388,15 @@ public class RecipeSelectionListener implements Listener {
             }
             
             if (removedCount == 0) {
-                System.out.println("[DELETE DEBUG] Recipe NOT FOUND in config!");
                 return false;
             }
-            
-            // Debug log
-            System.out.println("[DELETE DEBUG] Usunięto " + removedCount + " wystąpień receptury '" + recipeId + "'");
-            System.out.println("[DELETE DEBUG] Przed: " + recipesList.size() + " receptur, Po: " + recipes.size() + " receptur");
             
             // Zapisz z powrotem do config.yml
             config.set("crafting.recipes", recipes);
             config.save(configFile);
             
-            System.out.println("[DELETE DEBUG] Config saved successfully!");
             return true;
         } catch (Exception e) {
-            System.out.println("[DELETE DEBUG] EXCEPTION occurred!");
             e.printStackTrace();
             return false;
         }

@@ -5,6 +5,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
 import net.minecraft.world.item.crafting.display.SlotDisplay;
@@ -26,6 +27,7 @@ import pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingManager;
 import pl.com.sofitfy.enhanced_containers.crafting.vanilla.VanillaCraftingSimulator;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 /**
@@ -44,6 +46,9 @@ import java.util.*;
 public class RecipeBookPacketHandler {
 
     private static final String HANDLER_NAME = "plethoras_recipe_book_handler";
+    
+    // Śledzi stan shift dla każdego gracza (UUID -> czy shift wciśnięty)
+    private static final Map<UUID, Boolean> playerShiftState = new ConcurrentHashMap<>();
     
     private final JavaPlugin plugin;
     private final SharedCraftingManager sharedCraftingManager;
@@ -120,6 +125,13 @@ public class RecipeBookPacketHandler {
         
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+            // Śledź stan shift przez pakiety input
+            if (msg instanceof ServerboundPlayerInputPacket inputPacket) {
+                // input.shift() zwraca true gdy gracz trzyma shift
+                boolean isShiftDown = inputPacket.input().shift();
+                playerShiftState.put(player.getUniqueId(), isShiftDown);
+            }
+            
             if (msg instanceof ServerboundPlaceRecipePacket packet) {
                 if (handleRecipeBookClick(packet)) {
                     return;
@@ -141,7 +153,13 @@ public class RecipeBookPacketHandler {
             RecipeDisplayId recipeId = packet.recipe();
             boolean useMaxItems = packet.useMaxItems();
             
-            plugin.getLogger().info("[RecipeBook NMS] Intercepted recipe click: recipeId=" + recipeId.index() + ", useMaxItems=" + useMaxItems);
+            // Dla shared crafting ZAWSZE wypełniaj maksymalną ilość
+            // Klient nie wysyła poprawnie useMaxItems dla custom inventory
+            // Gracz może ręcznie umieścić pojedyncze itemy jeśli chce mniej
+            boolean shouldUseMax = true;
+            
+            plugin.getLogger().info("[RecipeBook NMS] Intercepted recipe click: recipeId=" + recipeId.index() 
+                + ", useMaxItems=" + useMaxItems + ", shouldUseMax=" + shouldUseMax + " (forced max for shared crafting)");
             
             Bukkit.getScheduler().runTask(plugin, () -> {
                 try {
@@ -150,7 +168,7 @@ public class RecipeBookPacketHandler {
                         return;
                     }
                     
-                    boolean success = fillGridFromRecipeDisplayId(player, currentTopInv, recipeId, useMaxItems);
+                    boolean success = fillGridFromRecipeDisplayId(player, currentTopInv, recipeId, shouldUseMax);
                     
                     if (success) {
                         updateWorkbench(currentTopInv, player);
@@ -282,6 +300,13 @@ public class RecipeBookPacketHandler {
         return fillGrid(player, sharedInv, slotToIngredient, serverPlayer, useMaxItems);
     }
     
+    /**
+     * Wypełnia siatkę craftingu składnikami z ekwipunku gracza.
+     * 
+     * Przy useMaxItems=true (shift-click) wypełnia MAKSYMALNĄ możliwą ilością,
+     * tak jak komenda /4x4 - zbiera WSZYSTKIE pasujące itemy z ekwipunku
+     * i rozdziela je równomiernie na sloty siatki.
+     */
     private boolean fillGrid(Player player, Inventory sharedInv, 
                             Map<Integer, SlotDisplay> slotToIngredient,
                             ServerPlayer serverPlayer,
@@ -290,60 +315,235 @@ public class RecipeBookPacketHandler {
         // VANILLA BEHAVIOR: Najpierw zwróć wszystkie przedmioty z siatki do inventory gracza
         returnGridItemsToPlayer(player, sharedInv);
         
-        int timesToFill = useMaxItems ? 64 : 1;
-        int filled = 0;
-        
-        for (int i = 0; i < timesToFill; i++) {
-            Map<Integer, ItemStack> itemsToPlace = new HashMap<>();
-            boolean canFillOnce = true;
-            
-            for (Map.Entry<Integer, SlotDisplay> entry : slotToIngredient.entrySet()) {
-                int gridSlot = entry.getKey();
-                SlotDisplay slotDisplay = entry.getValue();
-                
-                ItemStack found = findMatchingItemForSlotDisplay(player, slotDisplay, serverPlayer);
-                if (found == null) {
-                    canFillOnce = false;
-                    break;
-                }
-                
-                ItemStack currentInGrid = sharedInv.getItem(gridSlot);
-                if (currentInGrid != null && currentInGrid.getType() != Material.AIR) {
-                    if (!currentInGrid.isSimilar(found) || currentInGrid.getAmount() >= currentInGrid.getMaxStackSize()) {
-                        canFillOnce = false;
-                        break;
-                    }
-                }
-                
-                itemsToPlace.put(gridSlot, found);
-            }
-            
-            if (!canFillOnce) {
-                break;
-            }
-            
-            for (Map.Entry<Integer, ItemStack> entry : itemsToPlace.entrySet()) {
-                int gridSlot = entry.getKey();
-                ItemStack found = entry.getValue();
-                
-                found.setAmount(found.getAmount() - 1);
-                if (found.getAmount() <= 0) {
-                    player.getInventory().remove(found);
-                }
-                
-                ItemStack currentInGrid = sharedInv.getItem(gridSlot);
-                if (currentInGrid == null || currentInGrid.getType() == Material.AIR) {
-                    ItemStack toPlace = found.clone();
-                    toPlace.setAmount(1);
-                    sharedInv.setItem(gridSlot, toPlace);
-                } else {
-                    currentInGrid.setAmount(currentInGrid.getAmount() + 1);
-                }
-            }
-            filled++;
+        if (slotToIngredient.isEmpty()) {
+            return false;
         }
         
-        return filled > 0;
+        ItemStack[] playerContents = player.getInventory().getStorageContents();
+        
+        // ========== NOWA LOGIKA DLA SHIFT-CLICK ==========
+        // Zbieramy WSZYSTKIE pasujące itemy z ekwipunku, nie tylko z pierwszego slotu
+        
+        // Dla każdego gridSlot zapisz listę pasujących slotów gracza z ilościami
+        Map<Integer, java.util.List<int[]>> gridSlotSources = new LinkedHashMap<>();
+        
+        // Znajdź wszystkie źródła dla każdego gridSlot
+        for (Map.Entry<Integer, SlotDisplay> entry : slotToIngredient.entrySet()) {
+            int gridSlot = entry.getKey();
+            SlotDisplay slotDisplay = entry.getValue();
+            
+            java.util.List<int[]> sources = new java.util.ArrayList<>();
+            List<net.minecraft.world.item.ItemStack> possibleItems = resolvePossibleItems(slotDisplay, serverPlayer);
+            
+            if (!possibleItems.isEmpty()) {
+                for (int i = 0; i < playerContents.length; i++) {
+                    ItemStack item = playerContents[i];
+                    if (item != null && item.getType() != Material.AIR) {
+                        net.minecraft.world.item.ItemStack nmsItem = CraftItemStack.asNMSCopy(item);
+                        for (net.minecraft.world.item.ItemStack possibleItem : possibleItems) {
+                            if (net.minecraft.world.item.ItemStack.isSameItem(nmsItem, possibleItem)) {
+                                sources.add(new int[]{i, item.getAmount()});
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (sources.isEmpty()) {
+                return false; // Brak składnika
+            }
+            
+            gridSlotSources.put(gridSlot, sources);
+        }
+        
+        // Grupuj gridSloty które mogą używać tych samych itemów
+        // Zamiast toString(), grupuj po pierwszym pasującym itemie w inventory
+        // (wszystkie sloty używające tego samego itemu powinny być w jednej grupie)
+        Map<String, java.util.List<Integer>> itemTypeToGridSlots = new LinkedHashMap<>();
+        
+        for (Map.Entry<Integer, java.util.List<int[]>> entry : gridSlotSources.entrySet()) {
+            int gridSlot = entry.getKey();
+            java.util.List<int[]> sources = entry.getValue();
+            
+            // Użyj Material pierwszego pasującego itemu jako klucz grupowania
+            if (!sources.isEmpty()) {
+                int firstSourceSlot = sources.get(0)[0];
+                ItemStack firstItem = playerContents[firstSourceSlot];
+                String itemKey = firstItem.getType().name();
+                itemTypeToGridSlots.computeIfAbsent(itemKey, k -> new java.util.ArrayList<>()).add(gridSlot);
+            }
+        }
+        
+        plugin.getLogger().info("[RecipeBook NMS] Grouped grid slots: " + itemTypeToGridSlots);
+        
+        // Mapa: playerSlot -> ile dostępne
+        Map<Integer, Integer> availableInSlot = new HashMap<>();
+        for (int i = 0; i < playerContents.length; i++) {
+            ItemStack item = playerContents[i];
+            if (item != null && item.getType() != Material.AIR) {
+                availableInSlot.put(i, item.getAmount());
+            }
+        }
+        
+        // Oblicz maxFills dla każdej grupy składników
+        int maxFills = useMaxItems ? 64 : 1;
+        
+        for (Map.Entry<String, java.util.List<Integer>> entry : itemTypeToGridSlots.entrySet()) {
+            String itemKey = entry.getKey();
+            java.util.List<Integer> gridSlots = entry.getValue();
+            int slotsNeeded = gridSlots.size();
+            
+            // Zlicz WSZYSTKIE pasujące itemy dla tego typu
+            int totalAvailable = 0;
+            int itemMaxStackSize = 64;
+            Material targetMaterial = Material.valueOf(itemKey);
+            
+            for (int i = 0; i < playerContents.length; i++) {
+                ItemStack item = playerContents[i];
+                if (item != null && item.getType() == targetMaterial) {
+                    totalAvailable += item.getAmount();
+                    itemMaxStackSize = item.getMaxStackSize();
+                }
+            }
+            
+            // Ile wypełnień możemy zrobić z tej grupy?
+            int possibleFills = totalAvailable / slotsNeeded;
+            possibleFills = Math.min(possibleFills, itemMaxStackSize);
+            
+            plugin.getLogger().info("[RecipeBook NMS] Group " + itemKey + ": slotsNeeded=" + slotsNeeded 
+                + ", totalAvailable=" + totalAvailable + ", possibleFills=" + possibleFills);
+            
+            maxFills = Math.min(maxFills, possibleFills);
+        }
+        
+        if (maxFills <= 0) {
+            plugin.getLogger().warning("[RecipeBook NMS] maxFills <= 0, cannot fill grid");
+            return false;
+        }
+        
+        plugin.getLogger().info("[RecipeBook NMS] Calculated maxFills=" + maxFills + " (useMaxItems=" + useMaxItems + ")");
+        
+        // Rozdziel pobieranie z wielu slotów gracza
+        Map<Integer, ItemStack> gridToItemClone = new LinkedHashMap<>();
+        Map<Integer, Integer> slotsToUse = new LinkedHashMap<>();
+        
+        // Resetuj dostępność
+        availableInSlot.clear();
+        for (int i = 0; i < playerContents.length; i++) {
+            ItemStack item = playerContents[i];
+            if (item != null && item.getType() != Material.AIR) {
+                availableInSlot.put(i, item.getAmount());
+            }
+        }
+        
+        // Dla każdego gridSlot, przydziel maxFills itemów z dostępnych źródeł
+        for (Map.Entry<Integer, java.util.List<int[]>> entry : gridSlotSources.entrySet()) {
+            int gridSlot = entry.getKey();
+            java.util.List<int[]> sources = entry.getValue();
+            
+            int needed = maxFills;
+            ItemStack itemClone = null;
+            
+            for (int[] source : sources) {
+                int playerSlot = source[0];
+                int available = availableInSlot.getOrDefault(playerSlot, 0);
+                
+                if (available <= 0) continue;
+                
+                int toTake = Math.min(needed, available);
+                if (toTake > 0) {
+                    if (itemClone == null) {
+                        itemClone = playerContents[playerSlot].clone();
+                    }
+                    
+                    availableInSlot.put(playerSlot, available - toTake);
+                    slotsToUse.merge(playerSlot, toTake, Integer::sum);
+                    needed -= toTake;
+                    
+                    if (needed <= 0) break;
+                }
+            }
+            
+            if (itemClone == null || needed > 0) {
+                return false;
+            }
+            
+            gridToItemClone.put(gridSlot, itemClone);
+        }
+        
+        // Usuń z ekwipunku gracza
+        for (Map.Entry<Integer, Integer> entry : slotsToUse.entrySet()) {
+            int playerSlot = entry.getKey();
+            int amountToRemove = entry.getValue();
+            
+            ItemStack item = player.getInventory().getItem(playerSlot);
+            if (item != null && item.getType() != Material.AIR) {
+                int newAmount = item.getAmount() - amountToRemove;
+                if (newAmount <= 0) {
+                    player.getInventory().setItem(playerSlot, null);
+                } else {
+                    item.setAmount(newAmount);
+                }
+            }
+        }
+        
+        // Dodaj do siatki - każdy slot dostaje maxFills itemów
+        for (Map.Entry<Integer, ItemStack> entry : gridToItemClone.entrySet()) {
+            int gridSlot = entry.getKey();
+            ItemStack itemClone = entry.getValue();
+            
+            if (itemClone == null) continue;
+            
+            ItemStack toPlace = itemClone.clone();
+            toPlace.setAmount(maxFills);
+            sharedInv.setItem(gridSlot, toPlace);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Znajduje slot gracza z pasującym itemem który ma jeszcze dostępne sztuki.
+     * @return indeks slotu lub -1 jeśli nie znaleziono
+     */
+    private int findMatchingSlotForSlotDisplay(Player player, SlotDisplay slotDisplay, ServerPlayer serverPlayer,
+                                               Map<Integer, Integer> availableInSlot, ItemStack currentInGrid) {
+        List<net.minecraft.world.item.ItemStack> possibleItems = resolvePossibleItems(slotDisplay, serverPlayer);
+        if (possibleItems.isEmpty()) {
+            return -1;
+        }
+        
+        ItemStack[] playerContents = player.getInventory().getStorageContents();
+        
+        for (int slot = 0; slot < playerContents.length; slot++) {
+            ItemStack item = playerContents[slot];
+            if (item == null || item.getType() == Material.AIR) {
+                continue;
+            }
+            
+            int available = availableInSlot.getOrDefault(slot, 0);
+            if (available <= 0) {
+                continue;
+            }
+            
+            // Sprawdź czy item pasuje do tego co już jest w siatce
+            if (currentInGrid != null && currentInGrid.getType() != Material.AIR) {
+                if (!currentInGrid.isSimilar(item)) {
+                    continue;
+                }
+            }
+            
+            // Sprawdź czy item pasuje do wymagań przepisu
+            net.minecraft.world.item.ItemStack nmsItem = CraftItemStack.asNMSCopy(item);
+            for (net.minecraft.world.item.ItemStack possibleItem : possibleItems) {
+                if (net.minecraft.world.item.ItemStack.isSameItem(nmsItem, possibleItem)) {
+                    return slot;
+                }
+            }
+        }
+        
+        return -1;
     }
     
     /**

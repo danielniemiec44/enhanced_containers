@@ -39,13 +39,11 @@ public class SharedCraftingManager {
     /**
      * Pobiera istniejący ekwipunek dla stołu rzemieślniczego lub tworzy nowy.
      * Metoda zapewnia, że wszyscy gracze korzystają z tej samej instancji w pamięci.
+     * Thread-safe dzięki użyciu computeIfAbsent.
      */
     public Inventory getWorkbenchInventory(Location location) {
-        if (!persistentWorkbenches.containsKey(location)) {
-            Inventory inventory = Bukkit.createInventory(null, InventoryType.WORKBENCH);
-            persistentWorkbenches.put(location, inventory);
-        }
-        return persistentWorkbenches.get(location);
+        return persistentWorkbenches.computeIfAbsent(location, 
+            loc -> Bukkit.createInventory(null, InventoryType.WORKBENCH));
     }
 
     public boolean hasInventory(Location location) {
@@ -213,12 +211,17 @@ public class SharedCraftingManager {
 
     /**
      * Zapisuje wszystkie aktywne stoły rzemieślnicze do pliku przy wyłączeniu serwera.
+     * UWAGA: Ta metoda powinna być wywoływana tylko z głównego wątku serwera.
      */
     public void saveData() {
         FileConfiguration config = new YamlConfiguration();
         ConfigurationSection root = config.createSection("workbenches");
 
-        for (Map.Entry<Location, Inventory> entry : persistentWorkbenches.entrySet()) {
+        // Tworzymy kopię snapshot mapy, aby uniknąć problemów z concurrent modification
+        // ConcurrentHashMap.entrySet() zwraca weakly consistent iterator, ale dla pewności kopiujemy
+        Map<Location, Inventory> snapshot = new ConcurrentHashMap<>(persistentWorkbenches);
+        
+        for (Map.Entry<Location, Inventory> entry : snapshot.entrySet()) {
             Location loc = entry.getKey();
             Inventory inv = entry.getValue();
 
@@ -243,11 +246,16 @@ public class SharedCraftingManager {
     /**
      * Metoda pomocnicza zamykająca ekwipunki wszystkim graczom view
      * Użyteczna przy przeładowaniu pluginu.
+     * UWAGA: Ta metoda powinna być wywoływana tylko z głównego wątku serwera.
      */
     public void closeAllInventories() {
-        for (Inventory inv : persistentWorkbenches.values()) {
+        // Tworzymy kopię values(), aby uniknąć ConcurrentModificationException
+        // podczas gdy closeInventory() modyfikuje viewers
+        List<Inventory> inventoriesCopy = new ArrayList<>(persistentWorkbenches.values());
+        
+        for (Inventory inv : inventoriesCopy) {
             // Kopiujemy listę viewerów, aby uniknąć ConcurrentModificationException
-             inv.getViewers().forEach(human -> human.closeInventory());
+            new ArrayList<>(inv.getViewers()).forEach(human -> human.closeInventory());
         }
     }
 }

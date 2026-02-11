@@ -9,6 +9,15 @@ import pl.com.sofitfy.enhanced_containers.crafting.gui.RecipeSelectionListener;
 import pl.com.sofitfy.enhanced_containers.crafting.nms.NmsCraftingSelfTestRunner;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeLoader;
 import pl.com.sofitfy.enhanced_containers.crafting.recipe.RecipeManager;
+import pl.com.sofitfy.enhanced_containers.furnace.EnhancedFurnaceListener;
+import pl.com.sofitfy.enhanced_containers.furnace.nms.EnhancedFurnaceHopperHandler;
+import pl.com.sofitfy.enhanced_containers.furnace.nms.EnhancedFurnaceHopperTickHandler;
+import pl.com.sofitfy.enhanced_containers.furnace.nms.NmsFurnaceEngineDirect;
+import pl.com.sofitfy.enhanced_containers.furnace.EnhancedFurnaceLogic;
+import pl.com.sofitfy.enhanced_containers.furnace.EnhancedFurnaceManager;
+import pl.com.sofitfy.enhanced_containers.furnace.FurnaceCommand;
+import pl.com.sofitfy.enhanced_containers.integration.WorldEditIntegration;
+import pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingCommand;
 import pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingListener;
 import pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingManager;
 import pl.com.sofitfy.enhanced_containers.sharedcrafting.nms.RecipeBookPacketHandler;
@@ -38,6 +47,8 @@ public class Main extends JavaPlugin {
     private CraftingGUIListener guiListener;
     private SharedCraftingManager sharedCraftingManager;
     private RecipeBookPacketHandler recipeBookPacketHandler;
+    private EnhancedFurnaceManager enhancedFurnaceManager;
+    private EnhancedFurnaceLogic enhancedFurnaceLogic;
 
     @Override
     public void onEnable() {
@@ -116,12 +127,29 @@ public class Main extends JavaPlugin {
             getServer().getPluginManager().registerEvents(sharedCraftingListener, this);
             
             // Inicjalizacja NMS packet handlera dla Recipe Book
-            this.recipeBookPacketHandler = new RecipeBookPacketHandler(this, this.sharedCraftingManager);
-            RecipeBookPacketListener recipeBookListener = new RecipeBookPacketListener(this.recipeBookPacketHandler);
-            getServer().getPluginManager().registerEvents(recipeBookListener, this);
-            // Zarejestruj handlery dla graczy którzy już są online (hot-reload pluginu)
-            this.recipeBookPacketHandler.registerAllPlayers();
-            getLogger().info(PLUGIN_PREFIX + "Recipe Book NMS packet handler initialized!");
+            // W środowisku testowym (MockBukkit) NMS nie jest dostępny - pomijamy inicjalizację
+            // Sprawdzamy czy to MockBukkit po nazwie klasy serwera
+            boolean isMockBukkit = getServer().getClass().getName().contains("MockBukkit") || 
+                                   getServer().getClass().getName().contains("ServerMock");
+            
+            if (!isMockBukkit) {
+                try {
+                    this.recipeBookPacketHandler = new RecipeBookPacketHandler(this, this.sharedCraftingManager);
+                    RecipeBookPacketListener recipeBookListener = new RecipeBookPacketListener(this.recipeBookPacketHandler);
+                    getServer().getPluginManager().registerEvents(recipeBookListener, this);
+                    // Zarejestruj handlery dla graczy którzy już są online (hot-reload pluginu)
+                    this.recipeBookPacketHandler.registerAllPlayers();
+                    getLogger().info(PLUGIN_PREFIX + "Recipe Book NMS packet handler initialized!");
+                } catch (NoClassDefFoundError | Exception e) {
+                    // NMS niedostępny - kontynuuj bez Recipe Book handlera
+                    getLogger().warning(PLUGIN_PREFIX + "Recipe Book NMS packet handler failed to initialize: " + e.getMessage());
+                    this.recipeBookPacketHandler = null;
+                }
+            } else {
+                // MockBukkit - pomijamy NMS packet handler
+                getLogger().info(PLUGIN_PREFIX + "Recipe Book NMS packet handler skipped (MockBukkit detected)");
+                this.recipeBookPacketHandler = null;
+            }
             
             // Okresowa walidacja stołów rzemieślniczych - co 1 sekundę (20 ticków)
             // Sprawdza czy bloki nadal są CRAFTING_TABLE, jeśli nie - dropuje itemy
@@ -132,6 +160,79 @@ public class Main extends JavaPlugin {
             }, 20L, 20L); // Start po 1 sek, powtarzaj co 1 sek
             
             getLogger().info(PLUGIN_PREFIX + "Shared Crafting module initialized!");
+
+            // === INICJALIZACJA ROZSZERZONEGO PIECA (Enhanced Furnace) ===
+            this.enhancedFurnaceManager = new EnhancedFurnaceManager(this);
+            this.enhancedFurnaceManager.loadData();
+            this.enhancedFurnaceManager.initializeActiveFurnaces(); // Optymalizacja: tylko aktywne piece są tickowane
+            
+            // Wyczyść cache przepisów przy starcie - zapobiega staym danym z poprzedniej wersji pluginu
+            try {
+                NmsFurnaceEngineDirect.clearCache();
+                getLogger().info(PLUGIN_PREFIX + "NMS recipe cache cleared!");
+            } catch (NoClassDefFoundError e) {
+                // NMS nie jest dostępne (np. w testach MockBukkit)
+            }
+            
+            // Listener interakcji z piecem
+            EnhancedFurnaceListener furnaceListener = new EnhancedFurnaceListener(this, this.enhancedFurnaceManager);
+            getServer().getPluginManager().registerEvents(furnaceListener, this);
+            
+            // NMS Handlers dla lejków - tylko na prawdziwym serwerze (nie w MockBukkit)
+            try {
+                // NMS Handler dla lejków - blokuje vanilla transfer do naszych pieców
+                EnhancedFurnaceHopperHandler hopperHandler = new EnhancedFurnaceHopperHandler(this, this.enhancedFurnaceManager);
+                getServer().getPluginManager().registerEvents(hopperHandler, this);
+                
+                // NMS Tick Handler dla lejków - wykonuje transfer co 8 ticków (jak vanilla)
+                EnhancedFurnaceHopperTickHandler hopperTickHandler = new EnhancedFurnaceHopperTickHandler(this, this.enhancedFurnaceManager);
+                hopperTickHandler.start();
+                
+                getLogger().info(PLUGIN_PREFIX + "NMS Hopper handlers initialized!");
+            } catch (NoClassDefFoundError | UnsupportedOperationException e) {
+                // NMS nie jest dostępne (np. w testach MockBukkit)
+                getLogger().warning(PLUGIN_PREFIX + "NMS not available - hopper integration disabled. This is normal in test environments.");
+            }
+            
+            // Logika smażenia - uruchamiana co tick
+            this.enhancedFurnaceLogic = new EnhancedFurnaceLogic(this, this.enhancedFurnaceManager);
+            getServer().getScheduler().runTaskTimer(this, () -> {
+                this.enhancedFurnaceLogic.tickAllFurnaces();
+            }, 1L, 1L); // Start po 1 ticku, powtarzaj co tick
+            
+            // Okresowa walidacja pieców - co 1 sekundę
+            // Sprawdza czy bloki nadal są piecami, jeśli nie - dropuje itemy
+            getServer().getScheduler().runTaskTimer(this, () -> {
+                this.enhancedFurnaceManager.validateAndCleanupInvalidFurnaces();
+            }, 20L, 20L);
+            
+            // Rejestracja komendy /efurnace
+            var furnaceCmd = getCommand("efurnace");
+            if (furnaceCmd != null) {
+                FurnaceCommand furnaceCommand = new FurnaceCommand(this);
+                furnaceCommand.setFurnaceManager(this.enhancedFurnaceManager);
+                furnaceCmd.setExecutor(furnaceCommand);
+                furnaceCmd.setTabCompleter(furnaceCommand);
+            } else {
+                getLogger().warning(PLUGIN_PREFIX + "Command 'efurnace' is not registered in plugin.yml!");
+            }
+            
+            // Rejestracja komendy /sharedcrafting (tylko jeśli WorldEdit jest dostępny)
+            var sharedCraftingCmd = getCommand("sharedcrafting");
+            if (sharedCraftingCmd != null) {
+                SharedCraftingCommand sharedCraftingCommand = new SharedCraftingCommand(this, this.sharedCraftingManager);
+                sharedCraftingCmd.setExecutor(sharedCraftingCommand);
+                sharedCraftingCmd.setTabCompleter(sharedCraftingCommand);
+                
+                // Loguj informację o WorldEdit
+                if (WorldEditIntegration.isWorldEditAvailable()) {
+                    getLogger().info(PLUGIN_PREFIX + "WorldEdit detected - fill commands enabled!");
+                } else {
+                    getLogger().info(PLUGIN_PREFIX + "WorldEdit not found - fill commands disabled.");
+                }
+            }
+            
+            getLogger().info(PLUGIN_PREFIX + "Enhanced Furnace module initialized!");
 
 
             getLogger().info(PLUGIN_PREFIX + "§aPlugin fully loaded!");
@@ -152,6 +253,13 @@ public class Main extends JavaPlugin {
             this.sharedCraftingManager.closeAllInventories();
             this.sharedCraftingManager.saveData();
         }
+        
+        // Zapisz dane rozszerzonych pieców
+        if (this.enhancedFurnaceManager != null) {
+            this.enhancedFurnaceManager.closeAllInventories();
+            this.enhancedFurnaceManager.saveData();
+        }
+        
         getLogger().info(PLUGIN_PREFIX + "Plugin is shutting down!");
     }
 }

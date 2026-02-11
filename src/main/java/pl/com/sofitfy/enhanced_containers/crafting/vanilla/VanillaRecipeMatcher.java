@@ -216,14 +216,12 @@ public class VanillaRecipeMatcher {
             }
         }
 
-        // DEBUG: Pokaż co widzi kod
         if (repairItems.isEmpty()) {
             return null; // Cicho ignoruj puste
         }
         
         // Jeśli nie ma dokładnie 2 itemów, to nie jest naprawianie
         if (repairItems.size() != 2) {
-            // System.out.println("[RepairDebug] Zła ilość itemów: " + repairItems.size());
             return null;
         }
 
@@ -232,7 +230,6 @@ public class VanillaRecipeMatcher {
 
         // 2. SPRAWDZANIE TYPU (Musi być ten sam materiał)
         if (item1.getType() != item2.getType()) {
-            System.out.println("[RepairDebug] Różne typy: " + item1.getType() + " vs " + item2.getType());
             return null;
         }
 
@@ -249,17 +246,14 @@ public class VanillaRecipeMatcher {
         boolean nameMatch = meta1.hasDisplayName() == meta2.hasDisplayName();
         if (nameMatch && meta1.hasDisplayName()) {
             if (!meta1.getDisplayName().equals(meta2.getDisplayName())) {
-                System.out.println("[RepairDebug] Różne nazwy!");
                 return null;
             }
         } else if (!nameMatch) {
-            System.out.println("[RepairDebug] Jeden ma nazwę, drugi nie!");
             return null;
         }
         
         // Sprawdzamy Enchanty (żeby nie łączyć Fortune III z czystym)
         if (!meta1.getEnchants().equals(meta2.getEnchants())) {
-            System.out.println("[RepairDebug] Różne enchanty!");
             return null;
         }
 
@@ -295,8 +289,6 @@ public class VanillaRecipeMatcher {
         if (newDamage < 0) {
             newDamage = 0; // Clamp
         }
-
-        System.out.println("[RepairDebug] SUKCES! Naprawiam " + item1.getType() + ". Nowy damage: " + newDamage);
 
         // Tworzenie wyniku (klon item1, aby zachować wszystkie metadane)
         ItemStack result = item1.clone();
