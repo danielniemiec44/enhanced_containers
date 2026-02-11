@@ -17,20 +17,13 @@
         <mockbukkit.version>4.101.0</mockbukkit.version>
         <junit.version>5.10.2</junit.version>
 
-                <!--
-                    Opt-in: ciężkie testy uruchamiające prawdziwy serwer Paper.
-                    Domyślnie: false (żeby nie spowalniać codziennego cyklu pracy).
-                -->
-                <realPaperIT>false</realPaperIT>
+        <!-- Opt-in: ciężkie testy uruchamiające prawdziwy serwer Paper -->
+        <realPaperIT>false</realPaperIT>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!--
-              Spinamy wersje JUnit-a w jednym miejscu.
-              MockBukkit potrafi wciągnąć niespójne wersje JUnit Platform,
-              co kończy się błędem typu: org/junit/platform/engine/OutputDirectoryCreator.
-            -->
+            <!-- Spinamy wersje JUnit-a w jednym miejscu -->
             <dependency>
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
@@ -49,10 +42,22 @@
     </repositories>
 
     <dependencies>
-        <!-- Główny projekt - zawiera klasy do testowania (używane z MockBukkit.load(Main.class)) -->
+        <!-- 3 pluginy - budowane przez Gradle, instalowane do lokalnego repo Maven -->
         <dependency>
             <groupId>pl.com.sofitfy.enhanced_containers</groupId>
-            <artifactId>enhanced_containers</artifactId>
+            <artifactId>shared-crafting</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>pl.com.sofitfy.enhanced_containers</groupId>
+            <artifactId>enhanced-crafting</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>pl.com.sofitfy.enhanced_containers</groupId>
+            <artifactId>enhanced-furnaces</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>test</scope>
         </dependency>
@@ -65,21 +70,17 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- MockBukkit do uruchomienia fake serwera i ładowania pluginu z jar-a -->
+        <!-- MockBukkit do uruchomienia fake serwera i ładowania pluginów -->
         <dependency>
             <groupId>org.mockbukkit.mockbukkit</groupId>
             <artifactId>mockbukkit-v1.21</artifactId>
-                <version>${mockbukkit.version}</version>
+            <version>${mockbukkit.version}</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>
                     <groupId>io.papermc.paper</groupId>
                     <artifactId>paper-api</artifactId>
                 </exclusion>
-                <!--
-                  Wyrzucamy JUnit-y podciągane przez MockBukkit,
-                  bo i tak chcemy mieć jedną, spójną wersję (z BOM-a).
-                -->
                 <exclusion>
                     <groupId>org.junit.jupiter</groupId>
                     <artifactId>*</artifactId>
@@ -98,7 +99,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Mockito dla testów mieszanych (unit + integration) -->
+        <!-- Mockito -->
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
@@ -131,17 +132,11 @@
                 <version>3.2.5</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
-                    <!--
-                        Mockito/Byte Buddy na nowszych JDK wymaga trybu eksperymentalnego.
-                        To zabezpiecza testy integracyjne, jeśli użyją mocków.
-                    -->
                     <argLine>-Dnet.bytebuddy.experimental=true</argLine>
-                    <!-- Szukaj testów w fazach: surefire dla unit testów, failsafe dla integracyjnych -->
-                    <!-- <skipTests>true</skipTests> -->
                 </configuration>
             </plugin>
 
-            <!-- Failsafe plugin dla testów integracyjnych (*IT.java) -->
+            <!-- Failsafe: testy integracyjne (*IT.java, *IntegrationTest.java) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -150,7 +145,6 @@
                     <useModulePath>false</useModulePath>
                     <argLine>-Dnet.bytebuddy.experimental=true</argLine>
                     <systemPropertyVariables>
-                        <!-- przekazujemy flagę do JVM testów (failsafe zwykle forkuje JVM) -->
                         <realPaperIT>${realPaperIT}</realPaperIT>
                     </systemPropertyVariables>
                     <includes>
@@ -169,19 +163,17 @@
             </plugin>
 
             <!--
-              Budujemy plugin (jar) przed testami integracyjnymi.
-              UWAGA: Główny projekt używa Gradle z paperweight-userdev (wymaga NMS).
-              Maven nie może skompilować kodu NMS, więc musimy użyć Gradle.
-              Po zbudowaniu instalujemy JAR do lokalnego repo Maven.
+              Budujemy 3 pluginy (JARy) przez Gradle i instalujemy do lokalnego Maven repo.
+              Każdy plugin jest osobnym modułem Gradle.
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <executions>
-                    <!-- Krok 1: Buduj przez Gradle -->
+                    <!-- Krok 1: Buduj wszystkie pluginy przez Gradle -->
                     <execution>
-                        <id>build-plugin-jar-gradle</id>
+                        <id>build-plugin-jars-gradle</id>
                         <phase>generate-test-resources</phase>
                         <goals>
                             <goal>exec</goal>
@@ -196,9 +188,10 @@
                             </arguments>
                         </configuration>
                     </execution>
-                    <!-- Krok 2: Instaluj JAR do lokalnego Maven repo -->
+
+                    <!-- Krok 2: Instaluj SharedCrafting JAR -->
                     <execution>
-                        <id>install-jar-to-maven</id>
+                        <id>install-shared-crafting-jar</id>
                         <phase>generate-test-resources</phase>
                         <goals>
                             <goal>exec</goal>
@@ -207,9 +200,49 @@
                             <executable>mvn</executable>
                             <arguments>
                                 <argument>install:install-file</argument>
-                                <argument>-Dfile=${project.basedir}/../build/libs/enhanced_containers-unspecified.jar</argument>
+                                <argument>-Dfile=${project.basedir}/../shared-crafting/build/libs/shared-crafting-unspecified.jar</argument>
                                 <argument>-DgroupId=pl.com.sofitfy.enhanced_containers</argument>
-                                <argument>-DartifactId=enhanced_containers</argument>
+                                <argument>-DartifactId=shared-crafting</argument>
+                                <argument>-Dversion=1.0-SNAPSHOT</argument>
+                                <argument>-Dpackaging=jar</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+
+                    <!-- Krok 3: Instaluj EnhancedCrafting JAR -->
+                    <execution>
+                        <id>install-enhanced-crafting-jar</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>mvn</executable>
+                            <arguments>
+                                <argument>install:install-file</argument>
+                                <argument>-Dfile=${project.basedir}/../enhanced-crafting/build/libs/enhanced-crafting-unspecified.jar</argument>
+                                <argument>-DgroupId=pl.com.sofitfy.enhanced_containers</argument>
+                                <argument>-DartifactId=enhanced-crafting</argument>
+                                <argument>-Dversion=1.0-SNAPSHOT</argument>
+                                <argument>-Dpackaging=jar</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+
+                    <!-- Krok 4: Instaluj EnhancedFurnaces JAR -->
+                    <execution>
+                        <id>install-enhanced-furnaces-jar</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>mvn</executable>
+                            <arguments>
+                                <argument>install:install-file</argument>
+                                <argument>-Dfile=${project.basedir}/../enhanced-furnaces/build/libs/enhanced-furnaces-unspecified.jar</argument>
+                                <argument>-DgroupId=pl.com.sofitfy.enhanced_containers</argument>
+                                <argument>-DartifactId=enhanced-furnaces</argument>
                                 <argument>-Dversion=1.0-SNAPSHOT</argument>
                                 <argument>-Dpackaging=jar</argument>
                             </arguments>

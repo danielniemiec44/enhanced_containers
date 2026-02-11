@@ -1,0 +1,22 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/blaze_powder"
+  },
+  "overrides": [
+    { "predicate": { "custom_model_data": 100 }, "model": "enhanced_containers:item/fire_empty" },
+    { "predicate": { "custom_model_data": 101 }, "model": "enhanced_containers:item/fire_1" },
+    { "predicate": { "custom_model_data": 102 }, "model": "enhanced_containers:item/fire_2" },
+    { "predicate": { "custom_model_data": 103 }, "model": "enhanced_containers:item/fire_3" },
+    { "predicate": { "custom_model_data": 104 }, "model": "enhanced_containers:item/fire_4" },
+    { "predicate": { "custom_model_data": 105 }, "model": "enhanced_containers:item/fire_5" },
+    { "predicate": { "custom_model_data": 106 }, "model": "enhanced_containers:item/fire_6" },
+    { "predicate": { "custom_model_data": 107 }, "model": "enhanced_containers:item/fire_7" },
+    { "predicate": { "custom_model_data": 108 }, "model": "enhanced_containers:item/fire_8" },
+    { "predicate": { "custom_model_data": 109 }, "model": "enhanced_containers:item/fire_9" },
+    { "predicate": { "custom_model_data": 110 }, "model": "enhanced_containers:item/fire_10" },
+    { "predicate": { "custom_model_data": 111 }, "model": "enhanced_containers:item/fire_11" },
+    { "predicate": { "custom_model_data": 112 }, "model": "enhanced_containers:item/fire_12" },
+    { "predicate": { "custom_model_data": 113 }, "model": "enhanced_containers:item/fire_13" }
+  ]
+}

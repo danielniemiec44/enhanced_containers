@@ -1,0 +1,24 @@
+{
+  "model": {
+    "type": "minecraft:range_dispatch",
+    "property": "minecraft:custom_model_data",
+    "index": 0,
+    "entries": [
+      { "threshold": 100, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_empty" } },
+      { "threshold": 101, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_1" } },
+      { "threshold": 102, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_2" } },
+      { "threshold": 103, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_3" } },
+      { "threshold": 104, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_4" } },
+      { "threshold": 105, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_5" } },
+      { "threshold": 106, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_6" } },
+      { "threshold": 107, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_7" } },
+      { "threshold": 108, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_8" } },
+      { "threshold": 109, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_9" } },
+      { "threshold": 110, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_10" } },
+      { "threshold": 111, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_11" } },
+      { "threshold": 112, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_12" } },
+      { "threshold": 113, "model": { "type": "minecraft:model", "model": "enhanced_containers:item/fire_13" } }
+    ],
+    "fallback": { "type": "minecraft:model", "model": "minecraft:item/blaze_powder" }
+  }
+}

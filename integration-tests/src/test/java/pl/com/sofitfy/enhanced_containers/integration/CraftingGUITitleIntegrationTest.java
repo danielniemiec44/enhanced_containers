@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
-import pl.com.sofitfy.enhanced_containers.Main;
+import pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,12 +25,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class CraftingGUITitleIntegrationTest {
 
     private ServerMock server;
-    private Main plugin;
+    private EnhancedCraftingMain plugin;
 
     @BeforeEach
     void setUp() {
         server = MockBukkit.mock();
-        plugin = MockBukkit.load(Main.class);
+        plugin = MockBukkit.load(EnhancedCraftingMain.class);
     }
 
     @AfterEach

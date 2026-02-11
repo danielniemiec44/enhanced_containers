@@ -1,6 +1,7 @@
 package pl.com.sofitfy.enhanced_containers.testutils;
 
 import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.bukkit.Bukkit;
@@ -9,7 +10,6 @@ import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.NamespacedKey;
-import pl.com.sofitfy.enhanced_containers.Main;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -24,40 +24,53 @@ import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
 /**
- * Baza dla testów integracyjnych, gdzie potrzebujemy prawdziwie załadowanego pluginu.
+ * Baza dla testów integracyjnych - ładuje konkretny plugin przez MockBukkit.
  *
- * Uwaga praktyczna:
- * - MockBukkit (Paper) wymaga pluginu z pliku .jar.
- * - W Mavenie jar zwykle już istnieje w target/, ale w runnerze z IDE może go nie być.
- * - Jeśli jar nie istnieje, tworzymy minimalny jar z target/classes.
+ * Każdy test powinien nadpisać getPluginClass() wskazując na właściwą klasę Main:
+ * - SharedCraftingMain.class dla testów SharedCrafting
+ * - EnhancedCraftingMain.class dla testów EnhancedCrafting
+ * - EnhancedFurnacesMain.class dla testów EnhancedFurnaces
  */
 public abstract class MockBukkitPluginTestBase extends MockBukkitTestBase {
 
     protected Plugin plugin;
 
+    /**
+     * Zwraca klasę Main pluginu do załadowania.
+     * Domyślnie ładuje EnhancedCraftingMain (większość testów go używa).
+     * Testy furnace/shared-crafting powinny to nadpisać.
+     */
+    protected Class<? extends JavaPlugin> getPluginClass() {
+        try {
+            @SuppressWarnings("unchecked")
+            Class<? extends JavaPlugin> clazz = (Class<? extends JavaPlugin>)
+                Class.forName("pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain");
+            return clazz;
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Nie znaleziono klasy EnhancedCraftingMain", e);
+        }
+    }
+
     @BeforeEach
     void loadPlugin() {
-        // Preferowana ścieżka w MockBukkit: ładujemy plugin po klasie.
-        // To daje poprawny classloader (w przeciwnym razie JavaPlugin rzuca wyjątek).
+        // Ładujemy plugin po klasie - daje poprawny classloader
         try {
-            plugin = MockBukkit.load(Main.class);
+            plugin = MockBukkit.load(getPluginClass());
             return;
         } catch (Exception ignored) {
-            // Fallback: jeśli coś pójdzie nie tak, spróbujmy przez jar.
+            // Fallback: próbujemy przez jar
         }
 
         File pluginJar = ensurePluginJarExists();
         plugin = MockBukkit.loadJar(pluginJar);
     }
 
-    private static File ensurePluginJarExists() {
+    private File ensurePluginJarExists() {
         File existing = findBuiltPluginJarOrNull();
         if (existing != null) {
             return existing;
         }
 
-        // W testach integracyjnych uruchamiamy Maven-a z modułu integration-tests,
-        // ale klasy pluginu są w głównym module (".."), więc szukamy też w ../target.
         File targetDir = new File("target");
         File classesDir = new File(targetDir, "classes");
         if (!classesDir.isDirectory()) {
@@ -67,22 +80,22 @@ public abstract class MockBukkitPluginTestBase extends MockBukkitTestBase {
                 classesDir = parentClasses;
             } else {
                 throw new IllegalStateException(
-                    "Nie znaleziono target/classes ani ../target/classes. Uruchom najpierw kompilację (np. mvn -DskipTests package) albo odpal testy z Maven-a."
+                    "Nie znaleziono target/classes. Uruchom najpierw kompilację."
                 );
             }
         }
 
-        File jarFile = new File(targetDir, "enhanced_containers-under-test.jar");
+        File jarFile = new File(targetDir, "plugin-under-test.jar");
         try {
             createJarFromClassesDir(classesDir.toPath(), jarFile.toPath());
         } catch (IOException e) {
-            throw new IllegalStateException("Nie udało się utworzyć jar-a testowego dla MockBukkit.", e);
+            throw new IllegalStateException("Nie udało się utworzyć jar-a testowego.", e);
         }
 
         return jarFile;
     }
 
-    private static File findBuiltPluginJarOrNull() {
+    private File findBuiltPluginJarOrNull() {
         File[] targetDirs = new File[] {
             new File("target"),
             new File("../target")
@@ -91,8 +104,7 @@ public abstract class MockBukkitPluginTestBase extends MockBukkitTestBase {
         return Arrays.stream(targetDirs)
             .filter(File::isDirectory)
             .map(dir -> dir.listFiles((d, name) ->
-                name.startsWith("enhanced_containers-")
-                    && name.endsWith(".jar")
+                name.endsWith(".jar")
                     && !name.endsWith("-tests.jar")
                     && !name.endsWith("-sources.jar")
                     && !name.endsWith("-javadoc.jar")
@@ -134,21 +146,18 @@ public abstract class MockBukkitPluginTestBase extends MockBukkitTestBase {
             throw e;
         }
     }
-    
+
     /**
-     * Załaduj vanilla receptury do MockBukkita.
-     * MockBukkit jest pusty domyślnie - ta metoda dodaje podstawowe vanilla receptury.
+     * Załaduj podstawowe vanilla receptury do MockBukkita.
      */
     protected void loadVanillaRecipes() {
-        // OAK_LOG -> 4x OAK_PLANKS (szapeless)
         ShapelessRecipe logToPlanks = new ShapelessRecipe(
             new NamespacedKey("minecraft", "oak_planks"),
             new ItemStack(Material.OAK_PLANKS, 4)
         );
         logToPlanks.addIngredient(Material.OAK_LOG);
         Bukkit.getServer().addRecipe(logToPlanks);
-        
-        // PAPER + GUNPOWDER -> FIREWORK_ROCKET (shapeless)
+
         ShapelessRecipe firework = new ShapelessRecipe(
             new NamespacedKey("minecraft", "firework_rocket"),
             new ItemStack(Material.FIREWORK_ROCKET, 1)

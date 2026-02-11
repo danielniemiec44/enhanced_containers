@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
-import pl.com.sofitfy.enhanced_containers.Main;
+import pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain;
 
 import java.io.File;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Testy integracyjne cyklu życia pluginu.
  *
- * Używamy MockBukkit.load(Main.class) do ładowania pluginu bezpośrednio z classpath.
+ * Używamy MockBukkit.load(EnhancedCraftingMain.class) do ładowania pluginu bezpośrednio z classpath.
  * Dzięki temu mamy dostęp do klas pluginu w testach.
  *
  * Komentarze są po polsku i prostym językiem.
@@ -30,13 +30,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class PluginLifecycleIntegrationTest {
 
     private ServerMock server;
-    private Main plugin;
+    private EnhancedCraftingMain plugin;
 
     @BeforeEach
     void setUp() {
         // Inicjalizujemy mock serwera i ładujemy plugin
         server = MockBukkit.mock();
-        plugin = MockBukkit.load(Main.class);
+        plugin = MockBukkit.load(EnhancedCraftingMain.class);
     }
 
     @AfterEach

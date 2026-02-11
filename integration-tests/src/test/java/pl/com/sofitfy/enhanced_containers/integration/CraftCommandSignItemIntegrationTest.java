@@ -10,14 +10,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
-import pl.com.sofitfy.enhanced_containers.Main;
+import pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Testy integracyjne dla permisji /4x4 sign_item.
  *
- * Używamy MockBukkit.load(Main.class) do ładowania pluginu.
+ * Używamy MockBukkit.load(EnhancedCraftingMain.class) do ładowania pluginu.
  *
  * Komentarze po polsku i prostym językiem.
  */
@@ -25,12 +25,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class CraftCommandSignItemIntegrationTest {
 
     private ServerMock server;
-    private Main plugin;
+    private EnhancedCraftingMain plugin;
 
     @BeforeEach
     void setUp() {
         server = MockBukkit.mock();
-        plugin = MockBukkit.load(Main.class);
+        plugin = MockBukkit.load(EnhancedCraftingMain.class);
     }
 
     @AfterEach

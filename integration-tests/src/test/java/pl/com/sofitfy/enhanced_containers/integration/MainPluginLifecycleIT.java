@@ -1,5 +1,6 @@
 package pl.com.sofitfy.enhanced_containers.integration;
 
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.HandlerList;
@@ -7,7 +8,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import pl.com.sofitfy.enhanced_containers.Main;
+import pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain;
 import pl.com.sofitfy.enhanced_containers.commands.CraftCommand;
 import pl.com.sofitfy.enhanced_containers.testutils.MockBukkitPluginTestBase;
 
@@ -32,6 +33,11 @@ import static org.junit.jupiter.api.Assertions.*;
 @Disabled("MockBukkit (Paper) nie potrafi tu załadować pluginu z jar-a, bo klasy pluginu są na classpath tego samego modułu. Testy integracyjne pluginu są w osobnym projekcie integration-tests/.")
 class MainPluginLifecycleIT extends MockBukkitPluginTestBase {
 
+    @Override
+    protected Class<? extends JavaPlugin> getPluginClass() {
+        return EnhancedCraftingMain.class;
+    }
+
     @Test
     @DisplayName("Plugin jest włączony i ma zarejestrowaną komendę /4x4 (alias: /ecraft)")
     void pluginIsEnabledAndHasCommand() {
@@ -41,13 +47,13 @@ class MainPluginLifecycleIT extends MockBukkitPluginTestBase {
         assertEquals("PlethorasExtendedTools", plugin.getName(), "Nazwa pluginu powinna brać się z plugin.yml");
 
         // To: komenda istnieje i ma executor
-        assertTrue(plugin instanceof Main, "W tym projekcie main class to pl.com.sofitfy.enhanced_containers.Main");
-        PluginCommand mainCmd = ((Main) plugin).getCommand("4x4");
+        assertTrue(plugin instanceof EnhancedCraftingMain, "W tym projekcie main class to pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain");
+        PluginCommand mainCmd = ((EnhancedCraftingMain) plugin).getCommand("4x4");
         assertNotNull(mainCmd, "Komenda 4x4 powinna istnieć (plugin.yml)");
         assertNotNull(mainCmd.getExecutor(), "Komenda 4x4 powinna mieć ustawiony executor");
         assertTrue(mainCmd.getExecutor() instanceof CraftCommand, "Executor powinien być CraftCommand");
 
-        PluginCommand aliasCmd = ((Main) plugin).getCommand("ecraft");
+        PluginCommand aliasCmd = ((EnhancedCraftingMain) plugin).getCommand("ecraft");
         assertNotNull(aliasCmd, "Alias ecraft powinien istnieć (plugin.yml)");
         assertNotNull(aliasCmd.getExecutor(), "Alias ecraft powinien mieć ustawiony executor");
         assertSame(mainCmd.getExecutor(), aliasCmd.getExecutor(), "Alias ecraft powinien wskazywać na ten sam executor co 4x4");

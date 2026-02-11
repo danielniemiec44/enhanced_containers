@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.AfterEach;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
-import pl.com.sofitfy.enhanced_containers.Main;
+import pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class VanillaMatcherIntegrationTest {
     
     private ServerMock server;
-    private Main plugin;
+    private EnhancedCraftingMain plugin;
     private World world;
     private Player player;
     private VanillaRecipeMatcher matcher;
@@ -38,7 +38,7 @@ class VanillaMatcherIntegrationTest {
     /**
      * Inicjalizacja przed każdym testem.
      * - Uruchamia MockBukkit
-     * - Ładuje plugin Main
+     * - Ładuje plugin EnhancedCraftingMain
      * - Dodaje świat i gracza
      * - Tworzy instancję matchera
      */
@@ -47,8 +47,8 @@ class VanillaMatcherIntegrationTest {
         // Inicjalizuj serwer MockBukkit
         this.server = MockBukkit.mock();
         
-        // Załaduj plugin Main (aby receptury były dostępne)
-        this.plugin = MockBukkit.load(Main.class);
+        // Załaduj plugin EnhancedCraftingMain (aby receptury były dostępne)
+        this.plugin = MockBukkit.load(EnhancedCraftingMain.class);
         
         // Dodaj świat do serwera
         this.world = server.addSimpleWorld("test_world");

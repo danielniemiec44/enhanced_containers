@@ -1,0 +1,21 @@
+name: SharedCrafting
+main: pl.com.sofitfy.enhanced_containers.sharedcrafting.SharedCraftingMain
+version: 1.0
+api-version: 1.21
+author: Daniel Niemiec - Softify
+
+softdepend:
+  - WorldEdit
+  - FastAsyncWorldEdit
+
+commands:
+  sharedcrafting:
+    description: Shared Crafting commands (fill)
+    permission: plethoras.sharedcrafting.fill
+    aliases:
+      - scrafting
+
+permissions:
+  plethoras.sharedcrafting.fill:
+    description: Allows mass-filling shared crafting tables in WorldEdit selection
+    default: op

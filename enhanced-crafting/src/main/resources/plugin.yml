@@ -1,0 +1,23 @@
+name: EnhancedCrafting
+main: pl.com.sofitfy.enhanced_containers.EnhancedCraftingMain
+version: 1.0
+api-version: 1.21
+author: Daniel Niemiec - Softify
+
+commands:
+  "4x4":
+    description: Main command for 4x4 crafting and recipe editing
+    permission: plethoras.tools.use
+    aliases:
+      - ecraft
+
+permissions:
+  plethoras.tools.use:
+    description: Allows using the 4x4 crafting GUI
+    default: true
+  plethoras.tools.admin:
+    description: Allows creating and editing recipes in-game
+    default: op
+  plethoras.tools.sign_item:
+    description: Allows using the sign_item command to rename items
+    default: false

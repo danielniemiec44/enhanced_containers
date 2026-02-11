@@ -43,6 +43,7 @@ build/
 .venv/
 
 ### Build artifacts ###
+**/logs/
 resourcepack_out/
 enhanced_containers_resourcepack.zip
 integration-tests/*.jar

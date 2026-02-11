@@ -1,0 +1,24 @@
+name: EnhancedFurnaces
+main: pl.com.sofitfy.enhanced_containers.furnace.EnhancedFurnacesMain
+version: 1.0
+api-version: 1.21
+author: Daniel Niemiec - Softify
+
+softdepend:
+  - WorldEdit
+  - FastAsyncWorldEdit
+
+commands:
+  efurnace:
+    description: Enhanced Furnace commands (give/fill)
+    permission: plethoras.furnace.give
+    aliases:
+      - enhancedfurnace
+
+permissions:
+  plethoras.furnace.give:
+    description: Allows using efurnace command to get enhanced furnaces
+    default: op
+  plethoras.furnace.fill:
+    description: Allows mass-filling enhanced furnaces in WorldEdit selection
+    default: op
