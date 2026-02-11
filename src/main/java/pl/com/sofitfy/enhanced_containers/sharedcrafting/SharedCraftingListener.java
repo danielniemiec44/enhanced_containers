@@ -35,6 +35,7 @@ import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import pl.com.sofitfy.enhanced_containers.crafting.vanilla.VanillaCraftingSimulator;
 
@@ -223,51 +224,28 @@ public class SharedCraftingListener implements Listener {
     /**
      * Obsługuje kliknięcie w Recipe Book.
      * PlayerRecipeBookClickEvent jest wywoływany gdy gracz kliknie przepis w książce przepisów.
-     * Musimy ręcznie przenieść składniki z ekwipunku gracza do shared inventory.
+     * 
+     * UWAGA: Ten handler jest WYŁĄCZONY, ponieważ RecipeBookPacketHandler (NMS) obsługuje
+     * to lepiej - ma dostęp do flagi useMaxItems z pakietu, która określa czy użyto shift-click.
+     * Bukkit event nie ma tej informacji (isShiftClick() nie działa dla recipe book clicks).
+     * 
+     * Ten handler byłby wywoływany PO NMS handlerze i nadpisywałby prawidłowe wypełnienie
+     * (maksymalne) pojedynczymi itemami.
      */
     @SuppressWarnings("deprecation")
     @EventHandler
     public void onRecipeBookClick(PlayerRecipeBookClickEvent event) {
-        Player player = event.getPlayer();
+        // WYŁĄCZONE - obsługiwane przez RecipeBookPacketHandler (NMS)
+        // NMS handler ma dostęp do packet.useMaxItems() który prawidłowo określa shift-click
+        // Ten Bukkit event nie ma tej informacji (event.isShiftClick() nie działa dla recipe book)
+        
+        // Opcjonalnie: możemy anulować event żeby vanilla nie przetwarzała go
+        // event.setCancelled(true);
         
         // Debug log
         if (manager.getPlugin() != null) {
-            manager.getPlugin().getLogger().info("[SharedCrafting] Recipe Book click detected for recipe: " + 
-                (event.getRecipe() != null ? event.getRecipe().getResult().getType() : "null"));
+            manager.getPlugin().getLogger().fine("[SharedCrafting] Recipe Book click detected but handled by NMS handler");
         }
-        
-        // Sprawdź czy gracz ma otwarty nasz shared crafting inventory
-        Inventory topInv = player.getOpenInventory().getTopInventory();
-        if (topInv == null || topInv.getType() != InventoryType.WORKBENCH) {
-            return;
-        }
-        if (!manager.hasInventory(topInv)) {
-            return;
-        }
-        
-        Recipe recipe = event.getRecipe();
-        if (recipe == null) {
-            return;
-        }
-        
-        // Wypełnij siatkę składnikami z ekwipunku gracza
-        // Robimy to z opóźnieniem 1 tick, aby vanilla zdążyła przetworzyć event
-        Bukkit.getScheduler().runTask(manager.getPlugin(), () -> {
-            Inventory sharedInv = player.getOpenInventory().getTopInventory();
-            if (sharedInv == null || !manager.hasInventory(sharedInv)) {
-                return;
-            }
-            
-            boolean success = fillGridFromRecipe(player, sharedInv, recipe, event.isShiftClick());
-            
-            if (success) {
-                // Aktualizuj wynik craftingu
-                updateWorkbench(sharedInv, player.getWorld());
-                
-                // Wymuś odświeżenie widoku gracza
-                player.updateInventory();
-            }
-        });
     }
     
     /**
@@ -364,92 +342,39 @@ public class SharedCraftingListener implements Listener {
         return false;
     }
     
+    /**
+     * Wypełnia siatkę craftingu składnikami na podstawie ShapedRecipe.
+     * Używa wspólnego GridFillService (ta sama logika co /4x4 Fast Crafting).
+     */
     private boolean fillGridFromShapedRecipe(Player player, Inventory sharedInv, ShapedRecipe recipe, boolean shiftClick) {
-        String[] shape = recipe.getShape();
-        Map<Character, org.bukkit.inventory.RecipeChoice> choiceMap = recipe.getChoiceMap();
+        ItemStack[] playerInventory = player.getInventory().getStorageContents();
         
-        // Najpierw sprawdź czy gracz ma wszystkie składniki
-        Map<Integer, ItemStack> requiredItems = new HashMap<>();
+        var result = pl.com.sofitfy.enhanced_containers.crafting.util.GridFillService
+            .planForShapedRecipe(playerInventory, recipe, shiftClick);
         
-        for (int row = 0; row < shape.length; row++) {
-            String rowPattern = shape[row];
-            for (int col = 0; col < rowPattern.length(); col++) {
-                char c = rowPattern.charAt(col);
-                if (c == ' ') continue;
-                
-                org.bukkit.inventory.RecipeChoice choice = choiceMap.get(c);
-                if (choice == null) continue;
-                
-                int gridSlot = 1 + row * 3 + col; // Sloty 1-9 w siatce 3x3
-                
-                // Znajdź pasujący item w ekwipunku gracza
-                ItemStack found = findMatchingItem(player, choice);
-                if (found == null) {
-                    return false; // Brak składnika
-                }
-                requiredItems.put(gridSlot, found.clone());
-            }
+        if (!result.success()) {
+            return false;
         }
         
-        // Przenieś itemy z ekwipunku do siatki
-        int timesToFill = shiftClick ? 64 : 1;
-        int filled = 0;
+        pl.com.sofitfy.enhanced_containers.crafting.util.GridFillService
+            .applyFillResult(player, sharedInv, result);
         
-        for (int i = 0; i < timesToFill; i++) {
-            boolean canFillOnce = true;
-            
-            // Sprawdź czy mamy wszystkie składniki
-            for (Map.Entry<Integer, ItemStack> entry : requiredItems.entrySet()) {
-                org.bukkit.inventory.RecipeChoice choice = getChoiceForSlot(recipe, entry.getKey());
-                if (choice == null) continue;
-                
-                ItemStack found = findMatchingItem(player, choice);
-                if (found == null || found.getAmount() < 1) {
-                    canFillOnce = false;
-                    break;
-                }
-                
-                // Sprawdź czy slot w siatce może przyjąć więcej
-                ItemStack currentInGrid = sharedInv.getItem(entry.getKey());
-                if (currentInGrid != null && currentInGrid.getType() != Material.AIR) {
-                    if (!currentInGrid.isSimilar(found) || currentInGrid.getAmount() >= currentInGrid.getMaxStackSize()) {
-                        canFillOnce = false;
-                        break;
-                    }
-                }
-            }
-            
-            if (!canFillOnce) break;
-            
-            // Przenieś składniki
-            for (Map.Entry<Integer, ItemStack> entry : requiredItems.entrySet()) {
-                org.bukkit.inventory.RecipeChoice choice = getChoiceForSlot(recipe, entry.getKey());
-                if (choice == null) continue;
-                
-                ItemStack found = findMatchingItem(player, choice);
-                if (found == null) continue;
-                
-                // Usuń 1 z ekwipunku gracza
-                found.setAmount(found.getAmount() - 1);
-                if (found.getAmount() <= 0) {
-                    player.getInventory().remove(found);
-                }
-                
-                // Dodaj do siatki
-                int gridSlot = entry.getKey();
-                ItemStack currentInGrid = sharedInv.getItem(gridSlot);
-                if (currentInGrid == null || currentInGrid.getType() == Material.AIR) {
-                    ItemStack toPlace = entry.getValue().clone();
-                    toPlace.setAmount(1);
-                    sharedInv.setItem(gridSlot, toPlace);
-                } else {
-                    currentInGrid.setAmount(currentInGrid.getAmount() + 1);
-                }
-            }
-            filled++;
+        return true;
+    }
+    
+    /**
+     * Usuwa określoną ilość itemów ze slotu ekwipunku.
+     */
+    private void removeAmountFromSlot(Inventory inventory, int slot, int amount) {
+        ItemStack item = inventory.getItem(slot);
+        if (item == null || item.getType() == Material.AIR) return;
+        
+        int newAmount = item.getAmount() - amount;
+        if (newAmount <= 0) {
+            inventory.setItem(slot, null);
+        } else {
+            item.setAmount(newAmount);
         }
-        
-        return filled > 0;
     }
     
     private org.bukkit.inventory.RecipeChoice getChoiceForSlot(ShapedRecipe recipe, int gridSlot) {
@@ -467,97 +392,24 @@ public class SharedCraftingListener implements Listener {
         return choiceMap.get(c);
     }
     
+    /**
+     * Wypełnia siatkę craftingu składnikami na podstawie ShapelessRecipe.
+     * Używa wspólnego GridFillService (ta sama logika co /4x4 Fast Crafting).
+     */
     private boolean fillGridFromShapelessRecipe(Player player, Inventory sharedInv, ShapelessRecipe recipe, boolean shiftClick) {
-        java.util.List<org.bukkit.inventory.RecipeChoice> choices = recipe.getChoiceList();
+        ItemStack[] playerInventory = player.getInventory().getStorageContents();
         
-        int timesToFill = shiftClick ? 64 : 1;
-        int filled = 0;
+        var result = pl.com.sofitfy.enhanced_containers.crafting.util.GridFillService
+            .planForShapelessRecipe(playerInventory, recipe, shiftClick);
         
-        for (int i = 0; i < timesToFill; i++) {
-            // Sprawdź czy mamy wszystkie składniki
-            java.util.List<ItemStack> itemsToUse = new java.util.ArrayList<>();
-            
-            for (org.bukkit.inventory.RecipeChoice choice : choices) {
-                ItemStack found = findMatchingItem(player, choice);
-                if (found == null) {
-                    return filled > 0;
-                }
-                itemsToUse.add(found);
-            }
-            
-            // Sprawdź czy jest miejsce w siatce
-            int emptySlots = 0;
-            for (int slot = 1; slot <= 9; slot++) {
-                ItemStack current = sharedInv.getItem(slot);
-                if (current == null || current.getType() == Material.AIR) {
-                    emptySlots++;
-                }
-            }
-            
-            // Dla shapeless - sprawdź czy możemy dodać do istniejących stacków lub do pustych slotów
-            int slotsNeeded = 0;
-            for (int j = 0; j < itemsToUse.size(); j++) {
-                ItemStack item = itemsToUse.get(j);
-                boolean canStack = false;
-                
-                for (int slot = 1; slot <= 9; slot++) {
-                    ItemStack current = sharedInv.getItem(slot);
-                    if (current != null && current.isSimilar(item) && current.getAmount() < current.getMaxStackSize()) {
-                        canStack = true;
-                        break;
-                    }
-                }
-                
-                if (!canStack) {
-                    slotsNeeded++;
-                }
-            }
-            
-            if (slotsNeeded > emptySlots && filled == 0) {
-                return false; // Brak miejsca na pierwszy fill
-            }
-            if (slotsNeeded > emptySlots) {
-                break; // Brak miejsca na kolejne
-            }
-            
-            // Przenieś składniki
-            int nextEmptySlot = 1;
-            for (ItemStack item : itemsToUse) {
-                // Usuń z ekwipunku gracza
-                item.setAmount(item.getAmount() - 1);
-                if (item.getAmount() <= 0) {
-                    player.getInventory().remove(item);
-                }
-                
-                // Znajdź slot do dodania (najpierw stackowanie, potem pusty)
-                boolean added = false;
-                for (int slot = 1; slot <= 9; slot++) {
-                    ItemStack current = sharedInv.getItem(slot);
-                    if (current != null && current.isSimilar(item) && current.getAmount() < current.getMaxStackSize()) {
-                        current.setAmount(current.getAmount() + 1);
-                        added = true;
-                        break;
-                    }
-                }
-                
-                if (!added) {
-                    while (nextEmptySlot <= 9) {
-                        ItemStack current = sharedInv.getItem(nextEmptySlot);
-                        if (current == null || current.getType() == Material.AIR) {
-                            ItemStack toPlace = item.clone();
-                            toPlace.setAmount(1);
-                            sharedInv.setItem(nextEmptySlot, toPlace);
-                            nextEmptySlot++;
-                            break;
-                        }
-                        nextEmptySlot++;
-                    }
-                }
-            }
-            filled++;
+        if (!result.success()) {
+            return false;
         }
         
-        return filled > 0;
+        pl.com.sofitfy.enhanced_containers.crafting.util.GridFillService
+            .applyFillResult(player, sharedInv, result);
+        
+        return true;
     }
     
     private ItemStack findMatchingItem(Player player, org.bukkit.inventory.RecipeChoice choice) {
@@ -786,38 +638,13 @@ public class SharedCraftingListener implements Listener {
         event.setCancelled(true); // Zawsze anulujemy event, obsługujemy ręcznie
 
         if (event.isShiftClick()) {
-            // Bulk crafting: craftuj tyle razy, ile się da
-            // Maksymalnie 64 razy (żeby uniknąć nieskończonej pętli na niestandardowych recepturach)
-            int maxIterations = 64;
-            int crafted = 0;
-            
-            for (int i = 0; i < maxIterations; i++) {
-                // Zjedz składniki NAJPIERW (bo wynik już jest obliczony i czeka)
-                decrementIngredients(inv);
-                
-                // Dodaj item do eq gracza
-                player.getInventory().addItem(result.clone());
-                crafted++;
-                
-                // Przelicz nowy wynik na podstawie pozostałych składników (SYNCHRONICZNIE)
-                updateWorkbenchSync(inv, player.getWorld());
-                
-                // Sprawdzamy czy nadal jest wynik do scraftowania
-                ItemStack newResult = inv.getItem(0);
-                if (newResult == null || newResult.getType() == Material.AIR) {
-                    break; // Nie ma już receptury
-                }
-                
-                // Sprawdzamy czy nowy wynik jest taki sam jak poprzedni (ta sama receptura)
-                if (!newResult.isSimilar(result)) {
-                    break; // Receptura się zmieniła (np. zmieniono składniki podczas craftingu)
-                }
-                
-                // Sprawdzamy czy jest miejsce w eq gracza
-                if (!canFit(player, newResult)) {
-                    break; // Brak miejsca
-                }
-            }
+            // ================================================================
+            // SHIFT-CLICK CRAFTING - PODEJŚCIE TRANSAKCYJNE
+            // Zapobiega duplikacji i utracie przedmiotów poprzez:
+            // 1. Obliczenie limitów PRZED modyfikacją
+            // 2. Atomową modyfikację stanu
+            // ================================================================
+            handleShiftClickCraftingTransactional(inv, player, result);
         } else {
             // Zwykłe wyjęcie na kursor (pojedynczy craft)
             if (cursor == null || cursor.getType() == Material.AIR) {
@@ -831,6 +658,178 @@ public class SharedCraftingListener implements Listener {
             
             // Aktualizuj stan stołu po operacji
             updateWorkbench(inv, player.getWorld());
+        }
+    }
+
+    /**
+     * Obsługuje Shift-Click na slot wyniku używając PODEJŚCIA TRANSAKCYJNEGO.
+     * 
+     * ALGORYTM:
+     * 1. ANALIZA (tylko odczyt) - oblicz maksymalną liczbę craftów
+     * 2. WALIDACJA - sprawdź czy można wykonać operację  
+     * 3. WYKONANIE - atomowa modyfikacja: najpierw daj itemy, potem usuń składniki
+     * 
+     * Ten algorytm zapobiega:
+     * - Duplikacji przedmiotów (dawna pętla while mogła dodać więcej niż zużyć)
+     * - Utracie przedmiotów (składniki są usuwane DOPIERO po wydaniu wyniku)
+     */
+    private void handleShiftClickCraftingTransactional(Inventory inv, Player player, ItemStack result) {
+        
+        // ========================================
+        // KROK 1: ANALIZA STANU (TYLKO ODCZYT)
+        // ========================================
+        
+        // Oblicz maksymalną liczbę craftów na podstawie najmniejszego stosu składników
+        int maxCraftsFromIngredients = calculateMaxCraftsFromMatrix(inv);
+        
+        // Oblicz ile miejsca jest w ekwipunku gracza na wynik
+        int maxCraftsFromSpace = calculateInventorySpaceForResult(player, result);
+        
+        // Określ finalną liczbę craftów (minimum z obu limitów)
+        // Limit 64 dla bezpieczeństwa (zapobiega nieskończonym pętlom)
+        int finalCraftCount = Math.min(maxCraftsFromIngredients, maxCraftsFromSpace);
+        finalCraftCount = Math.min(finalCraftCount, 64);
+        
+        // ========================================
+        // KROK 2: WALIDACJA
+        // ========================================
+        
+        if (finalCraftCount <= 0) {
+            // Nie można wykonać żadnego craftu - zakończ bez modyfikacji
+            return;
+        }
+        
+        // ========================================
+        // KROK 3: WYKONANIE TRANSAKCJI (ATOMOWO)
+        // ========================================
+        
+        // KROK A: Oblicz całkowitą ilość przedmiotów do wydania
+        int totalItemsToGive = result.getAmount() * finalCraftCount;
+        
+        // KROK B: Przygotuj przedmioty do wydania
+        ItemStack itemsToGive = result.clone();
+        itemsToGive.setAmount(totalItemsToGive);
+        
+        // KROK C: Dodaj przedmioty do ekwipunku gracza
+        HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(itemsToGive);
+        
+        // KROK D: Jeśli coś nie zmieściło się - upuść na ziemię (bezpieczeństwo)
+        if (!overflow.isEmpty()) {
+            for (ItemStack overflowItem : overflow.values()) {
+                if (overflowItem != null && overflowItem.getType() != Material.AIR) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), overflowItem);
+                }
+            }
+        }
+        
+        // KROK E: Usuń składniki z matrycy (dokładnie finalCraftCount razy)
+        decrementIngredientsMultiple(inv, finalCraftCount);
+        
+        // KROK F: Zaktualizuj wynik craftingu
+        updateWorkbenchSync(inv, player.getWorld());
+    }
+
+    /**
+     * Oblicza maksymalną liczbę craftów możliwych do wykonania
+     * na podstawie NAJMNIEJSZEGO stosu składników w matrycy.
+     * 
+     * Matryca craftingu: sloty 1-9 w inventory (slot 0 to wynik)
+     * 
+     * @param inv Inventory stołu rzemieślniczego
+     * @return Maksymalna liczba craftów (minimum ze wszystkich stosów składników)
+     */
+    private int calculateMaxCraftsFromMatrix(Inventory inv) {
+        int minStackSize = Integer.MAX_VALUE;
+        boolean hasAnyIngredient = false;
+        
+        // Sloty 1-9 to matryca craftingu
+        for (int i = 1; i < 10; i++) {
+            ItemStack ingredient = inv.getItem(i);
+            
+            // Pomiń puste sloty
+            if (ingredient == null || ingredient.getType() == Material.AIR) {
+                continue;
+            }
+            
+            hasAnyIngredient = true;
+            
+            // Znajdź najmniejszy stos (to limituje liczbę craftów)
+            if (ingredient.getAmount() < minStackSize) {
+                minStackSize = ingredient.getAmount();
+            }
+        }
+        
+        // Jeśli brak składników, nie można craftować
+        if (!hasAnyIngredient) {
+            return 0;
+        }
+        
+        return minStackSize;
+    }
+
+    /**
+     * Oblicza ile razy można scraftować dany wynik zanim ekwipunek gracza się zapełni.
+     * Uwzględnia zarówno wolne sloty jak i możliwość dokładania do istniejących stosów.
+     * 
+     * @param player Gracz
+     * @param result Przedmiot wyniku (z jednego craftu)
+     * @return Maksymalna liczba craftów które zmieszczą się w ekwipunku
+     */
+    private int calculateInventorySpaceForResult(Player player, ItemStack result) {
+        int availableSpace = 0;
+        int maxStackSize = result.getMaxStackSize();
+        
+        // Przeszukaj storage contents gracza (sloty 0-35, bez zbroi i off-hand)
+        for (ItemStack slot : player.getInventory().getStorageContents()) {
+            if (slot == null || slot.getType() == Material.AIR) {
+                // Pusty slot - zmieści się cały stos
+                availableSpace += maxStackSize;
+            } else if (slot.isSimilar(result)) {
+                // Slot z tym samym przedmiotem - zmieści się różnica do max stacka
+                availableSpace += Math.max(0, maxStackSize - slot.getAmount());
+            }
+        }
+        
+        // Zwróć liczbę craftów (dzielenie przez ilość wyników z jednego craftu)
+        // Użyj dzielenia całkowitego w dół
+        return availableSpace / result.getAmount();
+    }
+
+    /**
+     * Zmniejsza składniki w matrycy craftingu o określoną liczbę craftów.
+     * Obsługuje specjalne przypadki jak wiadra (zostawiają puste wiadro).
+     * 
+     * @param inv Inventory stołu rzemieślniczego
+     * @param craftCount Liczba craftów do odjęcia od każdego składnika
+     */
+    private void decrementIngredientsMultiple(Inventory inv, int craftCount) {
+        // Sloty 1-9 to matryca craftingu
+        for (int i = 1; i < 10; i++) {
+            ItemStack item = inv.getItem(i);
+            
+            if (item == null || item.getType() == Material.AIR) {
+                continue;
+            }
+            
+            int currentAmount = item.getAmount();
+            int newAmount = currentAmount - craftCount;
+            
+            if (newAmount <= 0) {
+                // Składnik został zużyty całkowicie
+                // Obsługa specjalnych przypadków (wiadra)
+                if (item.getType() == Material.MILK_BUCKET || 
+                    item.getType() == Material.WATER_BUCKET || 
+                    item.getType() == Material.LAVA_BUCKET) {
+                    // Zostaw puste wiadra — tyle ile zużyto
+                    inv.setItem(i, new ItemStack(Material.BUCKET, craftCount));
+                } else {
+                    inv.setItem(i, null);
+                }
+            } else {
+                // Pozostała część składnika
+                item.setAmount(newAmount);
+                inv.setItem(i, item);
+            }
         }
     }
 
@@ -878,6 +877,11 @@ public class SharedCraftingListener implements Listener {
     }
 
     private void updateWorkbench(Inventory inv, World world) {
+        // Defensive null check - inv może być null jeśli stół został usunięty
+        if (inv == null) {
+            return;
+        }
+        
         ItemStack[] grid = new ItemStack[9];
         for (int i = 0; i < 9; i++) {
             grid[i] = inv.getItem(i + 1);
@@ -933,6 +937,11 @@ public class SharedCraftingListener implements Listener {
      * Używane podczas bulk craftingu, gdzie musimy od razu wiedzieć jaki jest nowy wynik.
      */
     private void updateWorkbenchSync(Inventory inv, World world) {
+        // Defensive null check - inv może być null jeśli stół został usunięty
+        if (inv == null) {
+            return;
+        }
+        
         ItemStack[] grid = new ItemStack[9];
         for (int i = 0; i < 9; i++) {
             grid[i] = inv.getItem(i + 1);
