@@ -38,3 +38,11 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Python ###
+.venv/
+
+### Build artifacts ###
+resourcepack_out/
+enhanced_containers_resourcepack.zip
+integration-tests/*.jar
